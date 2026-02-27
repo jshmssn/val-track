@@ -11,7 +11,7 @@
 
 const BASE =
   process.env.REACT_APP_API_URL ||
-  "http://localhost/val-track/backend";
+  "/backend";
 const TEAM_ID =
   process.env.REACT_APP_TEAM_ID || "aaaaaaaa-0000-0000-0000-000000000001";
 
@@ -29,7 +29,21 @@ async function request(url, options = {}) {
     ...options,
     headers,
   });
-  const json = await res.json();
+  const raw = await res.text();
+  let json = null;
+  try {
+    json = raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    const snippet = raw ? raw.slice(0, 180) : "<empty body>";
+    throw new Error(
+      `API returned non-JSON (HTTP ${res.status}) at ${url}: ${snippet}`,
+    );
+  }
+  if (!res.ok) {
+    throw new Error(
+      json?.error || `API request failed (HTTP ${res.status}) at ${url}`,
+    );
+  }
   if (!json.success) throw new Error(json.error || "API error");
   return json.data;
 }

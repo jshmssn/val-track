@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // ── Config ────────────────────────────────────────────────────
-$HF_API_KEY = $_ENV['HF_API_KEY'] ?? getenv('HF_API_KEY') ?: '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';
+$HF_API_KEY = $_ENV['HF_API_KEY'] ?? getenv('HF_API_KEY') ?: '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';
 $HF_MODEL   = $_ENV['HF_MODEL']   ?? getenv('HF_MODEL')   ?: 'Qwen/Qwen2.5-VL-7B-Instruct';
 $EXTRACTOR_BUILD = '2026-02-27-v4-timeline-authoritative';
 

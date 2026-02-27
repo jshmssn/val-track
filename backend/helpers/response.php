@@ -7,10 +7,11 @@ declare(strict_types=1);
 
 function setCorsHeaders(): void
 {
-    // Send CORS headers immediately — must come before any output
     header('Content-Type: application/json; charset=utf-8');
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
-    // Handle OPTIONS preflight — respond immediately without touching DB or files
     if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         http_response_code(204);
         exit;
@@ -19,8 +20,6 @@ function setCorsHeaders(): void
 
 function sendSuccess($data, int $code = 200): void
 {
-    // Wipe ALL output buffers — catches PHP warnings/notices that render as HTML
-    // e.g. "<br /><b>Warning</b>..." which breaks JSON.parse on the frontend
     while (ob_get_level() > 0) {
         ob_end_clean();
     }
@@ -32,7 +31,6 @@ function sendSuccess($data, int $code = 200): void
 
 function sendError(string $message, int $code = 400, ?array $details = null): void
 {
-    // Wipe ALL output buffers before sending error JSON
     while (ob_get_level() > 0) {
         ob_end_clean();
     }
@@ -58,7 +56,7 @@ function getJsonBody(): array
 function requireParam(array $data, string $key, string $label = '')
 {
     if (!isset($data[$key]) || $data[$key] === '') {
-        sendError("Missing required field: " . ($label ?: $key), 422);
+        sendError('Missing required field: ' . ($label ?: $key), 422);
     }
     return $data[$key];
 }
