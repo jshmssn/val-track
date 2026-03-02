@@ -16,6 +16,8 @@ import { MatchForm }          from './components/MatchForm';
 import { MatchRow }           from './components/MatchRow';
 import { SectionHeader }      from './components/SectionHeader';
 import { AIUploadModal }      from './components/AIUploadModal';
+import { MapAnalyticsTable }  from './components/MapAnalyticsTable';
+import { AgentMapStatsTable } from './components/AgentMapStatsTable';
 
 // All unique player names from loaded matches
 function getPlayers(matches) {
@@ -27,6 +29,8 @@ function getPlayers(matches) {
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'DASHBOARD'   },
   { id: 'players',   label: 'PLAYERS'     },
+  { id: 'maps',      label: 'MAPS STATS'  },
+  { id: 'agentMaps', label: 'AGENT MAP %' },
   { id: 'matches',   label: 'MATCHES'     },
   { id: 'stats',     label: 'STATS TABLE' },
 ];
@@ -195,6 +199,24 @@ export default function App() {
                 {players.map((p) => <PlayerCard key={p} player={p} matches={filtered} />)}
               </div>
               {players.length === 0 && <div style={styles.empty}>No player data yet. Add some matches first.</div>}
+            </>
+          )}
+
+          {activeView === 'maps' && (
+            <>
+              <SectionHeader title="MAP ANALYTICS" sub="Map-level win rate by side and pistol rounds" />
+              <MapAnalyticsTable matches={filtered} mapNames={refData.mapNames} />
+            </>
+          )}
+
+          {activeView === 'agentMaps' && (
+            <>
+              <SectionHeader title="AGENT MAP %" sub="Agent win rate and times played by map" />
+              <AgentMapStatsTable
+                matches={filtered}
+                mapNames={refData.mapNames}
+                agentNames={refData.agentNames}
+              />
             </>
           )}
 
