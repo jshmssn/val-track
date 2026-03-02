@@ -42,7 +42,7 @@ const NAV = [
   { id: "mapStats", label: "Map Stats", mobileLabel: "Maps", icon: "maps" },
   { id: "agentMap", label: "Agent Map", mobileLabel: "Agents", icon: "agents" },
   { id: "stats", label: "Stats", mobileLabel: "Stats", icon: "stats" },
-  { id: "admin", label: "Admin", icon: "+" },
+  { id: "admin", label: "Admin", mobileLabel: "Admin", icon: "admin" },
 ];
 
 const PAGE_TITLES = {
@@ -110,6 +110,13 @@ function NavIcon({ name }) {
       return (
         <svg {...common}>
           <path d="M4 20V10M10 20V4M16 20v-7M22 20v-4" />
+        </svg>
+      );
+    case "admin":
+      return (
+        <svg {...common}>
+          <path d="M12 3l8 3v6c0 5-3.2 8-8 9-4.8-1-8-4-8-9V6l8-3z" />
+          <path d="M12 8v8M8 12h8" />
         </svg>
       );
     default:
