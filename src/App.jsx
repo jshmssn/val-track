@@ -9,6 +9,7 @@ import { PlayerCard } from './components/PlayerCard';
 import { StatsTable } from './components/StatsTable';
 import { MapStatsModule } from './components/MapStatsModule';
 import { AgentMapStatsModule } from './components/AgentMapStatsModule';
+import { AdminReferenceModule } from './components/AdminReferenceModule';
 import { MatchForm } from './components/MatchForm';
 import { MatchRow } from './components/MatchRow';
 import { AIUploadModal } from './components/AIUploadModal';
@@ -38,7 +39,8 @@ const NAV = [
   { id: 'players',   label: 'Players',   icon: 'P' },
   { id: 'mapStats',  label: 'Map Stats', icon: 'M' },
   { id: 'agentMap',  label: 'Agent Map', icon: 'A' },
-  { id: 'stats',     label: 'Stats',     icon: '▦' },
+  { id: 'stats',     label: 'Stats',     icon: 'S' },
+  { id: 'admin',     label: 'Admin',     icon: '+' },
 ];
 
 const PAGE_TITLES = {
@@ -48,6 +50,7 @@ const PAGE_TITLES = {
   mapStats:  'Map Stats',
   agentMap:  'Agent & Map Stats',
   stats:     'Stats Table',
+  admin:     'Admin',
 };
 
 export default function App() {
@@ -256,6 +259,20 @@ export default function App() {
                 <StatsTable matches={filtered} />
               </>
             )}
+            {activeView === 'admin' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Admin</span>
+                  <span className="section-sub">Manage active maps and agents</span>
+                </div>
+                <AdminReferenceModule
+                  maps={refData.maps}
+                  agents={refData.agents}
+                  team={refData.team}
+                  onRefresh={refData.refresh}
+                />
+              </>
+            )}
           </main>
         )}
       </div>
@@ -276,6 +293,7 @@ function FilterSel({ label, val, opts, onChange }) {
     </div>
   );
 }
+
 
 
 

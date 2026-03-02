@@ -1,54 +1,71 @@
-// ============================================================
-// src/hooks/useReferenceData.js
-//
-// Loads agents, maps, and players from the PHP backend
-// (reference.php) once on mount and caches them in state.
-//
-// Returns { agents, maps, players, loading, error }
-//   agents  — [{ id, name, role }]  sorted by role then name
-//   maps    — [{ id, name }]        sorted by name
-//   players — [{ id, ign, role }]   sorted by ign
-// ============================================================
-
-import { useState, useEffect } from 'react';
-import { referenceApi } from '../api/matchesApi';
+import { useState, useEffect, useCallback } from 'react';
+import { TEAM_ID, referenceApi } from '../api/matchesApi';
 
 export function useReferenceData() {
-  const [agents,  setAgents]  = useState([]);
-  const [maps,    setMaps]    = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [maps, setMaps] = useState([]);
   const [players, setPlayers] = useState([]);
+  const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refresh = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [agentsRes, mapsRes, playersRes, teamRes, teamsRes] = await Promise.allSettled([
+        referenceApi.agents(),
+        referenceApi.maps(),
+        referenceApi.players(),
+        referenceApi.team(),
+        referenceApi.teams(),
+      ]);
 
-    Promise.all([
-      referenceApi.agents(),
-      referenceApi.maps(),
-    ])
-      .then(([agentRows, mapRows]) => {
-        if (cancelled) return;
-        setAgents(agentRows);
-        setMaps(mapRows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error('useReferenceData: failed to load reference data', err);
-        setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      if (agentsRes.status === 'fulfilled') setAgents(agentsRes.value || []);
+      else setAgents([]);
 
-    return () => { cancelled = true; };
+      if (mapsRes.status === 'fulfilled') setMaps(mapsRes.value || []);
+      else setMaps([]);
+
+      if (playersRes.status === 'fulfilled') setPlayers(playersRes.value || []);
+      else setPlayers([]);
+
+      // Backward compatibility:
+      // - Prefer type=team when supported
+      // - Fallback to type=teams list and resolve by TEAM_ID
+      if (teamRes.status === 'fulfilled') {
+        setTeam(teamRes.value || null);
+      } else if (teamsRes.status === 'fulfilled') {
+        const teamFromList = (teamsRes.value || []).find((t) => t.id === TEAM_ID) || null;
+        setTeam(teamFromList);
+      } else {
+        setTeam(null);
+      }
+
+      // Only fail hard if core reference datasets are unavailable.
+      if (
+        agentsRes.status === 'rejected' &&
+        mapsRes.status === 'rejected' &&
+        playersRes.status === 'rejected'
+      ) {
+        throw agentsRes.reason || mapsRes.reason || playersRes.reason;
+      }
+
+      setError(null);
+    } catch (err) {
+      console.error('useReferenceData: failed to load reference data', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Convenience: just the name strings (for dropdowns that only need names)
-  const agentNames  = agents.map((a) => a.name);
-  const mapNames    = maps.map((m) => m.name);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const agentNames = agents.map((a) => a.name);
+  const mapNames = maps.map((m) => m.name);
   const playerNames = players.map((p) => p.ign);
 
-  return { agents, maps, players, agentNames, mapNames, playerNames, loading, error };
+  return { agents, maps, players, team, agentNames, mapNames, playerNames, loading, error, refresh };
 }
