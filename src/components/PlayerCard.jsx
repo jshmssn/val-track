@@ -49,12 +49,6 @@ export function PlayerCard({ player, matches, row = null, matchMeta = null }) {
         <div>
           <div className="player-name">{player}</div>
           <div className="player-agents">{subTitle}</div>
-          {isPerMatchCard && (
-            <div className="player-match-meta">
-              <span className="vs-highlight">VS</span>
-              <span className="opponent-highlight">{matchMeta?.opponent || '-'}</span>
-            </div>
-          )}
         </div>
         <span className="player-tag" style={{ background: tc.bg, color: tc.color, borderColor: tc.border }}>
           {tag.label}
@@ -74,11 +68,11 @@ export function PlayerCard({ player, matches, row = null, matchMeta = null }) {
         ))}
       </div>
 
-      <div className="player-footer">
-        {isPerMatchCard
-          ? `${matchMeta?.map || '-'}`
-          : `${rows.length} match${rows.length !== 1 ? 'es' : ''} played`}
-      </div>
+      {!isPerMatchCard && (
+        <div className="player-footer">
+          {`${rows.length} match${rows.length !== 1 ? 'es' : ''} played`}
+        </div>
+      )}
     </div>
   );
 }

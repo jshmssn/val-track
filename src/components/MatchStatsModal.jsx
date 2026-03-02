@@ -14,6 +14,8 @@ export function MatchStatsModal({ match, onClose }) {
   const isWin = match.result === 'Win';
   const isDraw = match.result === 'Draw';
   const rc = isWin ? 'var(--emerald)' : isDraw ? 'var(--amber)' : 'var(--red)';
+  const thBase = { ...styles.th, padding: '12px 18px', fontSize: 11 };
+  const tdBase = { ...styles.td, padding: '12px 18px', fontSize: 15 };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -51,15 +53,23 @@ export function MatchStatsModal({ match, onClose }) {
             <div className="empty-state">No player stats recorded for this match</div>
           ) : (
             <div style={{ overflowX:'auto' }}>
-              <table style={{ ...styles.table, minWidth:600 }}>
+              <table style={{ ...styles.table, minWidth:860 }}>
+                <colgroup>
+                  <col style={{ width: '38%' }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '10.5%' }} />
+                  <col style={{ width: '10.5%' }} />
+                  <col style={{ width: '10.5%' }} />
+                  <col style={{ width: '10.5%' }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th style={styles.th}>Player</th>
-                    <th style={{ ...styles.th, textAlign:'center' }}>Agent</th>
-                    <th style={{ ...styles.th, textAlign:'center' }}>ACS</th>
-                    <th style={{ ...styles.th, textAlign:'center', color:'var(--emerald)' }}>K</th>
-                    <th style={{ ...styles.th, textAlign:'center', color:'var(--red)' }}>D</th>
-                    <th style={{ ...styles.th, textAlign:'center' }}>A</th>
+                    <th style={thBase}>Player</th>
+                    <th style={{ ...thBase, textAlign:'center' }}>Agent</th>
+                    <th style={{ ...thBase, textAlign:'center' }}>ACS</th>
+                    <th style={{ ...thBase, textAlign:'center', color:'var(--emerald)' }}>K</th>
+                    <th style={{ ...thBase, textAlign:'center', color:'var(--red)' }}>D</th>
+                    <th style={{ ...thBase, textAlign:'center' }}>A</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -67,16 +77,16 @@ export function MatchStatsModal({ match, onClose }) {
                     const kills = ps.kills || 0, deaths = ps.deaths || 0, assists = ps.assists || 0;
                     return (
                       <tr key={ps.player} style={i%2===0 ? styles.trEven : styles.trOdd}>
-                        <td style={{ ...styles.td, fontWeight:800, fontSize:16 }}>{ps.player}</td>
-                        <td style={{ ...styles.td, textAlign:'center' }}>
-                          <span style={{ fontSize:10, fontFamily:'var(--mono)', background:'var(--s3)', border:'1px solid var(--border)', padding:'2px 8px', borderRadius:4 }}>
+                        <td style={{ ...tdBase, fontWeight:800, fontSize:16 }}>{ps.player}</td>
+                        <td style={{ ...tdBase, textAlign:'center' }}>
+                          <span style={{ fontSize:11, fontFamily:'var(--mono)', background:'var(--s3)', border:'1px solid var(--border)', padding:'3px 9px', borderRadius:4 }}>
                             {ps.agent}
                           </span>
                         </td>
-                        <td style={{ ...styles.td, textAlign:'center', fontWeight:800, fontSize:18 }}>{ps.acs}</td>
-                        <td style={{ ...styles.td, textAlign:'center', fontWeight:800, fontSize:18, color:'var(--emerald)' }}>{kills}</td>
-                        <td style={{ ...styles.td, textAlign:'center', fontWeight:800, fontSize:18, color:'var(--red)' }}>{deaths}</td>
-                        <td style={{ ...styles.td, textAlign:'center', fontWeight:800, fontSize:18, color:'var(--text3)' }}>{assists}</td>
+                        <td style={{ ...tdBase, textAlign:'center', fontWeight:800, fontSize:16 }}>{ps.acs}</td>
+                        <td style={{ ...tdBase, textAlign:'center', fontWeight:800, fontSize:16, color:'var(--emerald)' }}>{kills}</td>
+                        <td style={{ ...tdBase, textAlign:'center', fontWeight:800, fontSize:16, color:'var(--red)' }}>{deaths}</td>
+                        <td style={{ ...tdBase, textAlign:'center', fontWeight:800, fontSize:16, color:'var(--text3)' }}>{assists}</td>
                       </tr>
                     );
                   })}

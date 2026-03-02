@@ -33,12 +33,12 @@ function getPlayerMatchCards(matches) {
 }
 
 const NAV = [
-  { id: 'dashboard', label: 'Overview',  icon: '⬡' },
-  { id: 'matches',   label: 'Matches',   icon: '⊞' },
-  { id: 'players',   label: 'Players',   icon: 'P' },
-  { id: 'mapStats',  label: 'Map Stats', icon: 'M' },
-  { id: 'agentMap',  label: 'Agent Map', icon: 'A' },
-  { id: 'stats',     label: 'Stats',     icon: '▦' },
+  { id: 'dashboard', label: 'Overview',  mobileLabel: 'Home',    icon: 'overview' },
+  { id: 'matches',   label: 'Matches',   mobileLabel: 'Matches', icon: 'matches' },
+  { id: 'players',   label: 'Players',   mobileLabel: 'Players', icon: 'players' },
+  { id: 'mapStats',  label: 'Map Stats', mobileLabel: 'Maps',    icon: 'maps' },
+  { id: 'agentMap',  label: 'Agent Map', mobileLabel: 'Agents',  icon: 'agents' },
+  { id: 'stats',     label: 'Stats',     mobileLabel: 'Stats',   icon: 'stats' },
 ];
 
 const PAGE_TITLES = {
@@ -49,6 +49,68 @@ const PAGE_TITLES = {
   agentMap:  'Agent & Map Stats',
   stats:     'Stats Table',
 };
+function NavIcon({ name }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    xmlns: 'http://www.w3.org/2000/svg',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  };
+
+  switch (name) {
+    case 'overview':
+      return (
+        <svg {...common}>
+          <path d="M3 10.5L12 3l9 7.5" />
+          <path d="M5 9.8V21h14V9.8" />
+        </svg>
+      );
+    case 'matches':
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="16" height="16" rx="3" />
+          <path d="M8 8h8M8 12h8M8 16h5" />
+        </svg>
+      );
+    case 'players':
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="9" r="3" />
+          <path d="M4 19c.7-2.4 2.7-4 5-4s4.3 1.6 5 4" />
+          <circle cx="17" cy="10" r="2.2" />
+          <path d="M14.8 18c.5-1.7 1.9-2.9 3.8-2.9" />
+        </svg>
+      );
+    case 'maps':
+      return (
+        <svg {...common}>
+          <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6z" />
+          <path d="M9 4v14M15 6v14" />
+        </svg>
+      );
+    case 'agents':
+      return (
+        <svg {...common}>
+          <path d="M12 3l7 4v5c0 4.5-2.8 7.8-7 9-4.2-1.2-7-4.5-7-9V7l7-4z" />
+          <path d="M9.4 12.2l1.9 1.9 3.6-3.8" />
+        </svg>
+      );
+    case 'stats':
+      return (
+        <svg {...common}>
+          <path d="M4 20V10M10 20V4M16 20v-7M22 20v-4" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
 
 export default function App() {
   const { state, dispatch } = useAppState();
@@ -74,6 +136,13 @@ export default function App() {
   const visiblePlayerCards = filters.player === 'All'
     ? playerMatchCards
     : playerMatchCards.filter((card) => card.player === filters.player);
+  const groupedPlayerCards = visiblePlayerCards.reduce((acc, card) => {
+    const opponent = (card.match?.opponent || 'Unknown').trim() || 'Unknown';
+    if (!acc[opponent]) acc[opponent] = [];
+    acc[opponent].push(card);
+    return acc;
+  }, {});
+  const groupedPlayerEntries = Object.entries(groupedPlayerCards);
   const wins = filtered.filter(m => m.result === 'Win').length;
   const total = filtered.length;
 
@@ -96,8 +165,9 @@ export default function App() {
               className={`nav-item${activeView === n.id ? ' active' : ''}`}
               onClick={() => dispatch({ type: 'SET_VIEW', view: n.id })}
             >
-              <span className="nav-icon">{n.icon}</span>
-              <span className="nav-label">{n.label}</span>
+              <span className="nav-icon"><NavIcon name={n.icon} /></span>
+              <span className="nav-label nav-label-desktop">{n.label}</span>
+              <span className="nav-label nav-label-mobile">{n.mobileLabel}</span>
             </button>
           ))}
         </nav>
@@ -209,16 +279,31 @@ export default function App() {
                   <span className="section-title">Player Breakdown</span>
                   <span className="section-sub">One card per player per match</span>
                 </div>
-                <div className="players-grid">
-                  {visiblePlayerCards.map((card) => (
-                    <PlayerCard
-                      key={card.id}
-                      player={card.player}
-                      matches={filtered}
-                      row={card.row}
-                      matchMeta={card.match}
-                    />
-                  ))}
+                <div className="opponent-groups">
+                  {groupedPlayerEntries.map(([opponent, cards]) => {
+                    const mapNames = [...new Set(cards.map((c) => (c.match?.map || '').trim()).filter(Boolean))];
+                    const mapLabel = mapNames.length === 1 ? mapNames[0] : mapNames.length > 1 ? 'Mixed' : '-';
+                    return (
+                      <section key={opponent} className="opponent-group">
+                        <div className="opponent-separator">
+                          <span className="opponent-vs">VS</span>
+                          <span className="opponent-name">{opponent}</span>
+                          <span className="opponent-map">MAP: {mapLabel}</span>
+                        </div>
+                        <div className="players-grid">
+                          {cards.map((card) => (
+                            <PlayerCard
+                              key={card.id}
+                              player={card.player}
+                              matches={filtered}
+                              row={card.row}
+                              matchMeta={card.match}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
                 {visiblePlayerCards.length === 0 && (
                   <div className="empty-state">No player data — add some matches first</div>
@@ -276,7 +361,4 @@ function FilterSel({ label, val, opts, onChange }) {
     </div>
   );
 }
-
-
-
 
