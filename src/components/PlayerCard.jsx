@@ -1,42 +1,60 @@
 import { avg, fmt, classifyPlayer } from '../utils/statsHelpers';
 
-export function PlayerCard({ player, matches }) {
-  const rows = matches.flatMap(m => m.playerStats.filter(ps => ps.player === player));
+export function PlayerCard({ player, matches, row = null, matchMeta = null }) {
+  const rows = row
+    ? [row]
+    : matches.flatMap((m) => (m.playerStats || []).filter((ps) => ps.player === player));
   if (rows.length === 0) return null;
 
+  const isPerMatchCard = !!row && !!matchMeta;
+
   const stats = {
-    acs:        avg(rows.map(r => r.acs)),
-    kd:         avg(rows.map(r => r.kd)),
-    adr:        avg(rows.map(r => r.adr)),
-    kast:       avg(rows.map(r => r.kast)),
-    fkRate:     avg(rows.map(r => r.fkRate)),
-    clutchRate: avg(rows.map(r => r.clutchRate)),
+    acs: avg(rows.map((r) => r.acs)),
+    kd: avg(rows.map((r) => r.kd)),
+    kills: avg(rows.map((r) => r.kills)),
+    deaths: avg(rows.map((r) => r.deaths)),
+    assists: avg(rows.map((r) => r.assists)),
   };
-  const agents = [...new Set(rows.map(r => r.agent))];
+  const latestDate = isPerMatchCard
+    ? (matchMeta?.date || '-')
+    : ([...matches]
+        .filter((m) => (m.playerStats || []).some((ps) => ps.player === player))
+        .map((m) => m.date)
+        .sort((a, b) => b.localeCompare(a))[0] || '-');
+  const agents = [...new Set(rows.map((r) => r.agent))];
+  const subTitle = isPerMatchCard
+    ? (rows[0]?.agent || '-')
+    : `${agents.slice(0, 3).join(' | ')}${agents.length > 3 ? ` +${agents.length - 3}` : ''}`;
   const tag = classifyPlayer(stats);
 
   const chips = [
-    { label: 'ACS',   val: fmt(stats.acs),             hi: stats.acs >= 250,     warn: false },
-    { label: 'K/D',   val: fmt(stats.kd, 2),           hi: stats.kd >= 1.2,      warn: stats.kd < 0.9 },
-    { label: 'ADR',   val: fmt(stats.adr),              hi: false,                warn: false },
-    { label: 'KAST',  val: `${fmt(stats.kast)}%`,       hi: stats.kast >= 70,     warn: false },
-    { label: 'FK%',   val: `${fmt(stats.fkRate*100)}%`, hi: false,                warn: false },
-    { label: 'CLUTCH',val: `${fmt(stats.clutchRate*100)}%`, hi: false,            warn: false },
+    { label: 'ACS', val: fmt(stats.acs), hi: stats.acs >= 250, warn: false },
+    { label: 'K/D', val: fmt(stats.kd, 2), hi: stats.kd >= 1.2, warn: stats.kd < 0.9 },
+    { label: 'KILLS', val: fmt(stats.kills), hi: false, warn: false },
+    { label: 'DEATHS', val: fmt(stats.deaths), hi: false, warn: false },
+    { label: 'ASSISTS', val: fmt(stats.assists), hi: false, warn: false },
+    { label: 'DATE', val: latestDate, hi: false, warn: false, compact: true },
   ];
 
   const tagColors = {
-    'TOP PERFORMER':    { bg:'rgba(16,185,129,0.12)', color:'var(--emerald)', border:'rgba(16,185,129,0.3)' },
-    'NEEDS IMPROVEMENT':{ bg:'rgba(232,37,60,0.12)',  color:'var(--red)',     border:'rgba(232,37,60,0.3)'  },
-    'STABLE':           { bg:'rgba(245,158,11,0.12)', color:'var(--amber)',   border:'rgba(245,158,11,0.3)' },
+    'TOP PERFORMER': { bg: 'rgba(16,185,129,0.12)', color: 'var(--emerald)', border: 'rgba(16,185,129,0.3)' },
+    'NEEDS IMPROVEMENT': { bg: 'rgba(232,37,60,0.12)', color: 'var(--red)', border: 'rgba(232,37,60,0.3)' },
+    STABLE: { bg: 'rgba(245,158,11,0.12)', color: 'var(--amber)', border: 'rgba(245,158,11,0.3)' },
   };
-  const tc = tagColors[tag.label] || tagColors['STABLE'];
+  const tc = tagColors[tag.label] || tagColors.STABLE;
 
   return (
     <div className="player-card">
       <div className="player-card-head">
         <div>
           <div className="player-name">{player}</div>
-          <div className="player-agents">{agents.slice(0,3).join(' · ')}{agents.length > 3 ? ` +${agents.length-3}` : ''}</div>
+          <div className="player-agents">{subTitle}</div>
+          {isPerMatchCard && (
+            <div className="player-match-meta">
+              <span className="vs-highlight">VS</span>
+              <span className="opponent-highlight">{matchMeta?.opponent || '-'}</span>
+            </div>
+          )}
         </div>
         <span className="player-tag" style={{ background: tc.bg, color: tc.color, borderColor: tc.border }}>
           {tag.label}
@@ -44,17 +62,23 @@ export function PlayerCard({ player, matches }) {
       </div>
 
       <div className="player-stats-grid">
-        {chips.map(c => (
+        {chips.map((c) => (
           <div key={c.label} className="stat-cell">
             <div className="stat-val" style={{ color: c.hi ? 'var(--emerald)' : c.warn ? 'var(--red)' : 'var(--text)' }}>
+              <span style={{ fontSize: c.compact ? 13 : undefined, letterSpacing: c.compact ? '0.02em' : undefined }}>
               {c.val}
+              </span>
             </div>
             <div className="stat-lbl">{c.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="player-footer">{rows.length} match{rows.length !== 1 ? 'es' : ''} played</div>
+      <div className="player-footer">
+        {isPerMatchCard
+          ? `${matchMeta?.map || '-'}`
+          : `${rows.length} match${rows.length !== 1 ? 'es' : ''} played`}
+      </div>
     </div>
   );
 }

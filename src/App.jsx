@@ -17,6 +17,19 @@ function getPlayers(matches) {
   return [...set].sort();
 }
 
+function getPlayerMatchCards(matches) {
+  return [...matches]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .flatMap((m) =>
+      (m.playerStats || []).map((ps) => ({
+        id: `${m.id}:${ps.player}`,
+        player: ps.player,
+        row: ps,
+        match: m,
+      }))
+    );
+}
+
 const NAV = [
   { id: 'dashboard', label: 'Overview',  icon: '⬡' },
   { id: 'matches',   label: 'Matches',   icon: '⊞' },
@@ -51,6 +64,10 @@ export default function App() {
 
   const filtered = useFilters(matches, filters);
   const players = getPlayers(matches);
+  const playerMatchCards = getPlayerMatchCards(filtered);
+  const visiblePlayerCards = filters.player === 'All'
+    ? playerMatchCards
+    : playerMatchCards.filter((card) => card.player === filters.player);
   const wins = filtered.filter(m => m.result === 'Win').length;
   const total = filtered.length;
 
@@ -184,12 +201,22 @@ export default function App() {
               <>
                 <div className="section-header" style={{ marginTop: 4 }}>
                   <span className="section-title">Player Breakdown</span>
-                  <span className="section-sub">Aggregated across filtered matches</span>
+                  <span className="section-sub">One card per player per match</span>
                 </div>
                 <div className="players-grid">
-                  {players.map(p => <PlayerCard key={p} player={p} matches={filtered} />)}
+                  {visiblePlayerCards.map((card) => (
+                    <PlayerCard
+                      key={card.id}
+                      player={card.player}
+                      matches={filtered}
+                      row={card.row}
+                      matchMeta={card.match}
+                    />
+                  ))}
                 </div>
-                {players.length === 0 && <div className="empty-state">No player data — add some matches first</div>}
+                {visiblePlayerCards.length === 0 && (
+                  <div className="empty-state">No player data — add some matches first</div>
+                )}
               </>
             )}
 
