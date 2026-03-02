@@ -7,6 +7,8 @@ import { pct } from './utils/statsHelpers';
 import { PerformanceSummary } from './components/PerformanceSummary';
 import { PlayerCard } from './components/PlayerCard';
 import { StatsTable } from './components/StatsTable';
+import { MapStatsModule } from './components/MapStatsModule';
+import { AgentMapStatsModule } from './components/AgentMapStatsModule';
 import { MatchForm } from './components/MatchForm';
 import { MatchRow } from './components/MatchRow';
 import { AIUploadModal } from './components/AIUploadModal';
@@ -33,7 +35,9 @@ function getPlayerMatchCards(matches) {
 const NAV = [
   { id: 'dashboard', label: 'Overview',  icon: '⬡' },
   { id: 'matches',   label: 'Matches',   icon: '⊞' },
-  { id: 'players',   label: 'Players',   icon: '◈' },
+  { id: 'players',   label: 'Players',   icon: 'P' },
+  { id: 'mapStats',  label: 'Map Stats', icon: 'M' },
+  { id: 'agentMap',  label: 'Agent Map', icon: 'A' },
   { id: 'stats',     label: 'Stats',     icon: '▦' },
 ];
 
@@ -41,6 +45,8 @@ const PAGE_TITLES = {
   dashboard: 'Overview',
   matches:   'Match History',
   players:   'Player Breakdown',
+  mapStats:  'Map Stats',
+  agentMap:  'Agent & Map Stats',
   stats:     'Stats Table',
 };
 
@@ -219,7 +225,28 @@ export default function App() {
                 )}
               </>
             )}
-
+            {activeView === 'mapStats' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Map Stats</span>
+                  <span className="section-sub">Map win rates with side splits and pistol performance</span>
+                </div>
+                <MapStatsModule matches={filtered} mapNames={refData.mapNames} />
+              </>
+            )}
+            {activeView === 'agentMap' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Agent &amp; Map Stats</span>
+                  <span className="section-sub">Agent win rates and usage by map</span>
+                </div>
+                <AgentMapStatsModule
+                  matches={filtered}
+                  mapNames={refData.mapNames}
+                  agentNames={refData.agentNames}
+                />
+              </>
+            )}
             {activeView === 'stats' && (
               <>
                 <div className="section-header" style={{ marginTop: 4 }}>
@@ -249,3 +276,7 @@ function FilterSel({ label, val, opts, onChange }) {
     </div>
   );
 }
+
+
+
+
