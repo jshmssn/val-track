@@ -1,70 +1,60 @@
-// ============================================================
-// src/components/PlayerCard.jsx
-// Displays aggregated stats and a performance classification tag.
-//
-// TO EXPAND:
-//   - Add trend arrows (↑ ↓) comparing to previous N matches
-//   - Add agent pool pie chart
-//   - Link to a detailed player page/modal
-// ============================================================
-import { avg, fmt } from "../utils/statsHelpers";
-import { classifyPlayer } from "../utils/statsHelpers";
-import { styles } from "../styles/tokens";
+import { avg, fmt, classifyPlayer } from '../utils/statsHelpers';
 
 export function PlayerCard({ player, matches }) {
-  const playerMatches = matches.filter((m) =>
-    m.playerStats.some((ps) => ps.player === player)
-  );
-  const rows = playerMatches.flatMap((m) =>
-    m.playerStats.filter((ps) => ps.player === player)
-  );
-
+  const rows = matches.flatMap(m => m.playerStats.filter(ps => ps.player === player));
   if (rows.length === 0) return null;
 
   const stats = {
-    acs:        avg(rows.map((r) => r.acs)),
-    kd:         avg(rows.map((r) => r.kd)),
-    adr:        avg(rows.map((r) => r.adr)),
-    kast:       avg(rows.map((r) => r.kast)),
-    fkRate:     avg(rows.map((r) => r.fkRate)),
-    clutchRate: avg(rows.map((r) => r.clutchRate)),
+    acs:        avg(rows.map(r => r.acs)),
+    kd:         avg(rows.map(r => r.kd)),
+    adr:        avg(rows.map(r => r.adr)),
+    kast:       avg(rows.map(r => r.kast)),
+    fkRate:     avg(rows.map(r => r.fkRate)),
+    clutchRate: avg(rows.map(r => r.clutchRate)),
   };
-  const agents = [...new Set(rows.map((r) => r.agent))];
+  const agents = [...new Set(rows.map(r => r.agent))];
   const tag = classifyPlayer(stats);
 
+  const chips = [
+    { label: 'ACS',   val: fmt(stats.acs),             hi: stats.acs >= 250,     warn: false },
+    { label: 'K/D',   val: fmt(stats.kd, 2),           hi: stats.kd >= 1.2,      warn: stats.kd < 0.9 },
+    { label: 'ADR',   val: fmt(stats.adr),              hi: false,                warn: false },
+    { label: 'KAST',  val: `${fmt(stats.kast)}%`,       hi: stats.kast >= 70,     warn: false },
+    { label: 'FK%',   val: `${fmt(stats.fkRate*100)}%`, hi: false,                warn: false },
+    { label: 'CLUTCH',val: `${fmt(stats.clutchRate*100)}%`, hi: false,            warn: false },
+  ];
+
+  const tagColors = {
+    'TOP PERFORMER':    { bg:'rgba(16,185,129,0.12)', color:'var(--emerald)', border:'rgba(16,185,129,0.3)' },
+    'NEEDS IMPROVEMENT':{ bg:'rgba(232,37,60,0.12)',  color:'var(--red)',     border:'rgba(232,37,60,0.3)'  },
+    'STABLE':           { bg:'rgba(245,158,11,0.12)', color:'var(--amber)',   border:'rgba(245,158,11,0.3)' },
+  };
+  const tc = tagColors[tag.label] || tagColors['STABLE'];
+
   return (
-    <div style={styles.playerCard}>
-      <div style={styles.playerCardHeader}>
+    <div className="player-card">
+      <div className="player-card-head">
         <div>
-          <div style={styles.playerName}>{player}</div>
-          <div style={styles.playerAgents}>{agents.join(" · ")}</div>
+          <div className="player-name">{player}</div>
+          <div className="player-agents">{agents.slice(0,3).join(' · ')}{agents.length > 3 ? ` +${agents.length-3}` : ''}</div>
         </div>
-        <span style={{ ...styles.playerTag, color: tag.color, borderColor: tag.color }}>
+        <span className="player-tag" style={{ background: tc.bg, color: tc.color, borderColor: tc.border }}>
           {tag.label}
         </span>
       </div>
 
-      <div style={styles.playerStatsGrid}>
-        <StatChip label="ACS"    value={fmt(stats.acs)} />
-        <StatChip label="K/D"    value={fmt(stats.kd, 2)} />
-        <StatChip label="ADR"    value={fmt(stats.adr)} />
-        <StatChip label="KAST"   value={`${fmt(stats.kast)}%`} />
-        <StatChip label="FK%"    value={`${fmt(stats.fkRate * 100)}%`} />
-        <StatChip label="CLCH%"  value={`${fmt(stats.clutchRate * 100)}%`} />
+      <div className="player-stats-grid">
+        {chips.map(c => (
+          <div key={c.label} className="stat-cell">
+            <div className="stat-val" style={{ color: c.hi ? 'var(--emerald)' : c.warn ? 'var(--red)' : 'var(--text)' }}>
+              {c.val}
+            </div>
+            <div className="stat-lbl">{c.label}</div>
+          </div>
+        ))}
       </div>
 
-      <div style={styles.playerMatches}>
-        {rows.length} match{rows.length !== 1 ? "es" : ""} played
-      </div>
-    </div>
-  );
-}
-
-function StatChip({ label, value }) {
-  return (
-    <div style={styles.statChip}>
-      <div style={styles.statChipVal}>{value}</div>
-      <div style={styles.statChipLabel}>{label}</div>
+      <div className="player-footer">{rows.length} match{rows.length !== 1 ? 'es' : ''} played</div>
     </div>
   );
 }

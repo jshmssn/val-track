@@ -1,73 +1,54 @@
-// src/components/MatchRow.jsx
 import { useState } from 'react';
-import { styles, C } from '../styles/tokens';
+import { C } from '../styles/tokens';
 import { MatchStatsModal } from './MatchStatsModal';
 
 export function MatchRow({ match, onDelete }) {
   const [open, setOpen] = useState(false);
-  const resultColor = match.result === 'Win' ? C.green : match.result === 'Loss' ? C.red : C.gold;
+  const isWin = match.result === 'Win';
+  const isDraw = match.result === 'Draw';
+  const rc = isWin ? 'var(--emerald)' : isDraw ? 'var(--amber)' : 'var(--red)';
   const hasStats = (match.playerStats || []).length > 0;
 
   return (
     <>
-      <div
-        style={{
-          ...styles.matchRow,
-          cursor: 'pointer',
-          transition: 'border-color 0.15s, background 0.15s',
-          borderColor: C.border,
-        }}
-        onClick={() => setOpen(true)}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = `${resultColor}55`;
-          e.currentTarget.style.background = `${C.surfaceAlt}`;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = C.border;
-          e.currentTarget.style.background = C.surface;
-        }}
-      >
-        {/* Left accent bar */}
-        <div style={{
-          position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: 3, background: resultColor, borderRadius: '4px 0 0 4px',
-        }} />
+      <div className="match-card" onClick={() => setOpen(true)}>
+        {/* Left color bar */}
+        <div className="match-result-bar" style={{ background: rc, color: 'transparent', fontSize: 0, minWidth: 8 }} />
 
-        <div style={{ ...styles.matchResult, color: resultColor }}>
-          {match.result.toUpperCase()}
-        </div>
-        <div style={styles.matchScore}>{match.score}</div>
-        <div style={styles.matchInfo}>
-          <span style={styles.matchOpponent}>{match.opponent || '—'}</span>
-          <span style={styles.matchMeta}>{match.map} · {match.type} · {match.date}</span>
-        </div>
-
-        {/* Stats pill */}
-        {hasStats && (
-          <div style={{
-            fontSize: 9, letterSpacing: 2, color: C.textSecondary,
-            border: `1px solid ${C.borderBright}`, padding: '3px 10px',
-            borderRadius: 2, whiteSpace: 'nowrap',
-          }}>
-            {(match.playerStats || []).length} PLAYERS
+        {/* Score */}
+        <div className="match-score-cell">
+          <div className="match-score-num" style={{ color: rc }}>{match.score || '—'}</div>
+          <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2, letterSpacing: '0.06em' }}>
+            {isWin ? 'WIN' : isDraw ? 'DRAW' : 'LOSS'}
           </div>
-        )}
-
-        <div style={{ ...styles.matchType, color: match.type === 'Tournament' ? C.gold : '#aaa' }}>
-          {match.type?.toUpperCase()}
         </div>
 
-        {onDelete && (
-          <button
-            style={styles.matchDeleteBtn}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (window.confirm('Delete this match?')) onDelete(match.id);
-            }}
-          >
-            DEL
-          </button>
-        )}
+        {/* Info */}
+        <div className="match-info-cell">
+          <div className="match-opponent">{match.opponent || '—'}</div>
+          <div className="match-meta-row">
+            <span className="meta-chip">{match.map}</span>
+            <span className="meta-dot">·</span>
+            <span className="meta-chip">{match.date}</span>
+            {match.type === 'Tournament' && match.tournament && (
+              <><span className="meta-dot">·</span><span className="meta-chip" style={{ color: 'var(--amber)' }}>{match.tournament}</span></>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="match-actions" onClick={e => e.stopPropagation()}>
+          {hasStats && <span className="players-pill">{match.playerStats.length}P</span>}
+          {match.type === 'Tournament'
+            ? <span className="type-badge" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--amber)', borderColor: 'rgba(245,158,11,0.3)', border: '1px solid' }}>TOURN</span>
+            : <span className="type-badge" style={{ background: 'var(--s3)', color: 'var(--text3)' }}>SCRIM</span>
+          }
+          {onDelete && (
+            <button className="del-btn" onClick={e => { e.stopPropagation(); if (window.confirm('Delete this match?')) onDelete(match.id); }}>
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {open && <MatchStatsModal match={match} onClose={() => setOpen(false)} />}

@@ -1,40 +1,26 @@
-// ============================================================
-// src/components/PerformanceSummary.jsx
-// Top-level KPI cards for team-wide metrics.
-//
-// TO EXPAND:
-//   - Add sparkline charts per card (recharts <SparklineChart>)
-//   - Add comparison to previous period (delta % badges)
-// ============================================================
-import { pct, aggregateTeamMetrics } from "../utils/statsHelpers";
-import { styles, C } from "../styles/tokens";
+import { pct, aggregateTeamMetrics } from '../utils/statsHelpers';
 
 export function PerformanceSummary({ matches }) {
-  const wins  = matches.filter((m) => m.result === "Win").length;
+  const wins = matches.filter(m => m.result === 'Win').length;
   const total = matches.length;
-  const metrics = aggregateTeamMetrics(matches);
+  const m = aggregateTeamMetrics(matches);
 
   const cards = [
-    {
-      label: "Win Rate",
-      value: total ? `${pct(wins, total)}%` : "—",
-      sub: `${wins}W / ${total - wins}L`,
-      accent: wins / (total || 1) >= 0.5 ? C.red : "#888",
-    },
-    { label: "ATK Win %",    value: metrics ? `${metrics.atkPct}%` : "—",       sub: "Attacking rounds",    accent: C.orange },
-    { label: "DEF Win %",    value: metrics ? `${metrics.defPct}%` : "—",       sub: "Defensive rounds",    accent: C.gold  },
-    { label: "Post-Plant %", value: metrics ? `${metrics.postPlantPct}%` : "—", sub: "After plant wins",    accent: C.teal  },
-    { label: "ATK Pistol",    value: metrics ? `${metrics.atkPistolWins}/${metrics.pistolTotal}` : "—",  sub: "ATK pistol rounds won",  accent: C.green },
+    { label: 'Win Rate',    value: total ? `${pct(wins, total)}%` : '—', sub: `${wins}W · ${total - wins}L`, accent: 'var(--red)',     color: 'var(--red)' },
+    { label: 'ATK Win%',   value: m ? `${m.atkPct}%` : '—',             sub: 'Attacking rounds',             accent: 'var(--amber)',   color: 'var(--amber)' },
+    { label: 'DEF Win%',   value: m ? `${m.defPct}%` : '—',             sub: 'Defensive rounds',             accent: 'var(--sky)',     color: 'var(--sky)' },
+    { label: 'Post-Plant', value: m ? `${m.postPlantPct}%` : '—',       sub: 'After plant',                  accent: 'var(--violet)',  color: 'var(--violet)' },
+    { label: 'ATK Pistol', value: m ? `${m.atkPistolWins}/${m.pistolTotal}` : '—', sub: 'Pistol rounds won',accent: 'var(--emerald)', color: 'var(--emerald)' },
   ];
 
   return (
-    <div style={styles.summaryGrid}>
-      {cards.map((c) => (
-        <div key={c.label} style={styles.kpiCard}>
-          <div style={{ ...styles.kpiAccent, background: c.accent }} />
-          <div style={styles.kpiValue}>{c.value}</div>
-          <div style={styles.kpiLabel}>{c.label}</div>
-          <div style={styles.kpiSub}>{c.sub}</div>
+    <div className="kpi-grid">
+      {cards.map(c => (
+        <div key={c.label} className="kpi-card">
+          <div className="kpi-accent" style={{ background: c.accent }} />
+          <div className="kpi-val" style={{ color: c.color }}>{c.value}</div>
+          <div className="kpi-label">{c.label}</div>
+          <div className="kpi-sub">{c.sub}</div>
         </div>
       ))}
     </div>

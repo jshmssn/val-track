@@ -1,233 +1,224 @@
-// ============================================================
-// src/App.jsx — wired to PHP backend
-// ============================================================
 import { useState, useEffect, useRef } from 'react';
 import { useAppState } from './hooks/useAppState';
 import { useReferenceData } from './hooks/useReferenceData';
-import { useFilters }  from './hooks/useFilters';
-import { pct }         from './utils/statsHelpers';
-import { styles, C }   from './styles/tokens';
+import { useFilters } from './hooks/useFilters';
+import { pct } from './utils/statsHelpers';
 
-import { FiltersPanel }       from './components/FiltersPanel';
 import { PerformanceSummary } from './components/PerformanceSummary';
-import { PlayerCard }         from './components/PlayerCard';
-import { StatsTable }         from './components/StatsTable';
-import { MatchForm }          from './components/MatchForm';
-import { MatchRow }           from './components/MatchRow';
-import { SectionHeader }      from './components/SectionHeader';
-import { AIUploadModal }      from './components/AIUploadModal';
+import { PlayerCard } from './components/PlayerCard';
+import { StatsTable } from './components/StatsTable';
+import { MatchForm } from './components/MatchForm';
+import { MatchRow } from './components/MatchRow';
+import { AIUploadModal } from './components/AIUploadModal';
 
-// All unique player names from loaded matches
 function getPlayers(matches) {
   const set = new Set();
-  matches.forEach((m) => (m.playerStats || []).forEach((ps) => set.add(ps.player)));
+  matches.forEach(m => (m.playerStats || []).forEach(ps => set.add(ps.player)));
   return [...set].sort();
 }
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'DASHBOARD'   },
-  { id: 'players',   label: 'PLAYERS'     },
-  { id: 'matches',   label: 'MATCHES'     },
-  { id: 'stats',     label: 'STATS TABLE' },
+const NAV = [
+  { id: 'dashboard', label: 'Overview',  icon: '⬡' },
+  { id: 'matches',   label: 'Matches',   icon: '⊞' },
+  { id: 'players',   label: 'Players',   icon: '◈' },
+  { id: 'stats',     label: 'Stats',     icon: '▦' },
 ];
+
+const PAGE_TITLES = {
+  dashboard: 'Overview',
+  matches:   'Match History',
+  players:   'Player Breakdown',
+  stats:     'Stats Table',
+};
 
 export default function App() {
   const { state, dispatch } = useAppState();
-  const refData = useReferenceData(); // agents, maps, players from DB
-  const [showForm,     setShowForm]     = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [aiMatchType,  setAiMatchType]  = useState(null); // 'Scrim' | 'Tournament' | null
-  const dropdownRef = useRef();
+  const refData = useReferenceData();
+  const [showForm, setShowForm] = useState(false);
+  const [showDrop, setShowDrop] = useState(false);
+  const [aiMatchType, setAiMatchType] = useState(null);
+  const dropRef = useRef();
   const { matches, filters, activeView, loading, error, apiError } = state;
 
-  // Close dropdown on outside click
   useEffect(() => {
-    if (!showDropdown) return;
-    const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowDropdown(false);
-      }
+    if (!showDrop) return;
+    const h = e => {
+      if (dropRef.current && !dropRef.current.contains(e.target)) setShowDrop(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showDropdown]);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showDrop]);
 
   const filtered = useFilters(matches, filters);
-  const players  = getPlayers(matches);
-  const wins     = filtered.filter((m) => m.result === 'Win').length;
-  const total    = filtered.length;
+  const players = getPlayers(matches);
+  const wins = filtered.filter(m => m.result === 'Win').length;
+  const total = filtered.length;
+
+  const MAPS_OPTS = ['All', ...new Set(matches.map(m => m.map).filter(Boolean))];
+  const OPP_OPTS  = ['All', ...new Set(matches.map(m => m.opponent).filter(Boolean))];
+  const PLR_OPTS  = ['All', ...players];
 
   return (
-    <div style={styles.root}>
-      <div className="bg-grid" />
-
-      {/* ── Header ──────────────────────────────────────── */}
-      <header style={styles.header}>
-        <div style={styles.logoArea}>
-          <div style={styles.logoMark}>▲</div>
-          <div>
-            <div style={styles.logoTitle}>VALORANT INTEL</div>
-            <div style={styles.logoSub}>COACHING SYSTEM</div>
-          </div>
+    <div className="app-shell">
+      {/* ── Sidebar ─────────────────────────────── */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <div className="logo-tri" />
         </div>
 
-        <nav style={styles.nav}>
-          {NAV_ITEMS.map((n) => (
-            <button key={n.id}
-              style={{ ...styles.navBtn, ...(activeView === n.id ? styles.navBtnActive : {}) }}
-              onClick={() => dispatch({ type: 'SET_VIEW', view: n.id })}>
-              {n.label}
+        <nav className="sidebar-nav">
+          {NAV.map(n => (
+            <button
+              key={n.id}
+              className={`nav-item${activeView === n.id ? ' active' : ''}`}
+              onClick={() => dispatch({ type: 'SET_VIEW', view: n.id })}
+            >
+              <span className="nav-icon">{n.icon}</span>
+              <span className="nav-label">{n.label}</span>
             </button>
           ))}
         </nav>
+      </aside>
 
-        <div style={{ fontSize: 11, color: C.textSecondary, letterSpacing: 1 }}>
-          {loading ? (
-            <span style={{ color: C.textMuted }}>LOADING...</span>
-          ) : total > 0 ? (
-            <span>
-              <span style={{ color: C.green }}>{wins}W</span>
-              {' / '}
-              <span style={{ color: C.red }}>{total - wins}L</span>
-              {' · '}{pct(wins, total)}% WR
-            </span>
-          ) : 'No matches'}
-        </div>
-
-        <div style={{ position: 'relative' }} ref={dropdownRef}>
-          <button style={styles.addMatchBtn} onClick={() => setShowDropdown((v) => !v)}>
-            + ADD MATCH ▾
-          </button>
-          {showDropdown && (
-            <div style={{
-              position: 'absolute', top: '110%', right: 0, zIndex: 200,
-              background: '#1a1a2e', border: `1px solid #ff4444`,
-              borderRadius: 4, minWidth: 180, overflow: 'hidden',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-            }}>
-              {[
-                { label: '🎮  SCRIM',      type: 'Scrim' },
-                { label: '🏆  TOURNAMENT', type: 'Tournament' },
-              ].map(({ label, type }) => (
-                <button
-                  key={type}
-                  style={{
-                    display: 'block', width: '100%', background: 'none',
-                    border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    color: '#e0e0e0', padding: '12px 18px', fontSize: 11,
-                    fontFamily: 'inherit', fontWeight: 700, letterSpacing: 2,
-                    cursor: 'pointer', textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,68,68,0.15)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                  onClick={() => {
-                    setShowDropdown(false);
-                    setAiMatchType(type);
-                  }}
-                >
-                  {label}
-                  <div style={{ fontSize: 9, color: '#888', fontWeight: 400, marginTop: 2, letterSpacing: 1 }}>
-                    Upload file · AI extraction
-                  </div>
-                </button>
-              ))}
-              <button
-                style={{
-                  display: 'block', width: '100%', background: 'none',
-                  border: 'none', color: '#888', padding: '10px 18px', fontSize: 10,
-                  fontFamily: 'inherit', letterSpacing: 2, cursor: 'pointer', textAlign: 'left',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                onClick={() => { setShowDropdown(false); setShowForm(true); }}
-              >
-                ✎  MANUAL ENTRY
-              </button>
+      {/* ── Main ──────────────────────────────── */}
+      <div className="main-content">
+        {/* Topbar */}
+        <header className="topbar">
+          <div className="topbar-left">
+            <div className="topbar-title">{PAGE_TITLES[activeView]}</div>
+            <div className="topbar-sub">
+              {loading ? 'loading...' : `${filtered.length} matches in view`}
             </div>
-          )}
-        </div>
-      </header>
-
-      {/* ── Filters ─────────────────────────────────────── */}
-      <FiltersPanel filters={filters} dispatch={dispatch} matches={matches} players={players} />
-
-      {/* ── API Error Banner ────────────────────────────── */}
-      {(error || apiError) && (
-        <div style={styles.errorBanner}>
-          ⚠ {error || apiError}
-          {error && (
-            <span style={{ marginLeft: 12, fontSize: 10, color: C.textMuted }}>
-              — Check that your PHP backend is running at the correct URL
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── Loading Screen ──────────────────────────────── */}
-      {loading && (
-        <div style={styles.loadingScreen}>
-          <div style={styles.loadingSpinner}>▲</div>
-          <div style={styles.loadingText}>CONNECTING TO DATABASE...</div>
-        </div>
-      )}
-
-      {/* ── Main Content ────────────────────────────────── */}
-      {!loading && (
-        <main style={styles.main}>
-
-          {activeView === 'dashboard' && (
-            <>
-              <SectionHeader title="TEAM PERFORMANCE" sub={`${filtered.length} matches · ${wins} wins`} />
-              <PerformanceSummary matches={filtered} />
-              <SectionHeader title="RECENT MATCHES" sub="Latest 5 results" />
-              <div style={styles.matchList}>
-                {[...filtered].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
-                  .map((m) => <MatchRow key={m.id} match={m} onDelete={(id) => dispatch({ type: 'DELETE_MATCH', id })} />)}
-                {filtered.length === 0 && <div style={styles.empty}>No matches found for the current filters.</div>}
+          </div>
+          <div className="topbar-right">
+            {total > 0 && !loading && (
+              <div className="wl-badge">
+                <span className="wl-win">{wins}W</span>
+                <span className="wl-sep">·</span>
+                <span className="wl-loss">{total - wins}L</span>
+                <span className="wl-sep">·</span>
+                <span className="wl-pct">{pct(wins, total)}%</span>
               </div>
-            </>
-          )}
+            )}
+            <div ref={dropRef} style={{ position: 'relative' }}>
+              <button className="add-btn" onClick={() => setShowDrop(v => !v)}>
+                <span>＋</span> Add Match
+              </button>
+              {showDrop && (
+                <div className="dropdown-menu">
+                  {[{ label: 'Scrim', emoji: '🎮', type: 'Scrim' }, { label: 'Tournament', emoji: '🏆', type: 'Tournament' }].map(x => (
+                    <button key={x.type} className="dropdown-item" onClick={() => { setShowDrop(false); setAiMatchType(x.type); }}>
+                      {x.emoji} {x.label}
+                      <span className="dropdown-item-sub">AI screenshot import</span>
+                    </button>
+                  ))}
+                  <button className="dropdown-item" onClick={() => { setShowDrop(false); setShowForm(true); }}>
+                    ✎ Manual Entry
+                    <span className="dropdown-item-sub">Fill in stats manually</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
 
-          {activeView === 'players' && (
-            <>
-              <SectionHeader title="PLAYER BREAKDOWN" sub="Aggregated performance across filtered matches" />
-              <div style={styles.playersGrid}>
-                {players.map((p) => <PlayerCard key={p} player={p} matches={filtered} />)}
-              </div>
-              {players.length === 0 && <div style={styles.empty}>No player data yet. Add some matches first.</div>}
-            </>
-          )}
+        {/* Filter bar */}
+        <div className="filter-bar">
+          <FilterSel label="Map"      val={filters.map}    opts={MAPS_OPTS}              onChange={v => dispatch({ type:'SET_FILTER',key:'map',value:v })} />
+          <FilterSel label="Type"     val={filters.type}   opts={['All','Tournament','Scrim']} onChange={v => dispatch({ type:'SET_FILTER',key:'type',value:v })} />
+          <FilterSel label="Player"   val={filters.player} opts={PLR_OPTS}               onChange={v => dispatch({ type:'SET_FILTER',key:'player',value:v })} />
+          <FilterSel label="Opponent" val={filters.opponent || 'All'} opts={OPP_OPTS}    onChange={v => dispatch({ type:'SET_FILTER',key:'opponent',value:v==='All'?'':v })} />
+          <button className="filter-reset" onClick={() => dispatch({ type:'RESET_FILTERS' })}>Reset</button>
+        </div>
 
-          {activeView === 'matches' && (
-            <>
-              <SectionHeader title="MATCH HISTORY" sub={`${filtered.length} matches`} />
-              <div style={styles.matchList}>
-                {[...filtered].sort((a, b) => b.date.localeCompare(a.date))
-                  .map((m) => <MatchRow key={m.id} match={m} onDelete={(id) => dispatch({ type: 'DELETE_MATCH', id })} />)}
-                {filtered.length === 0 && <div style={styles.empty}>No matches found.</div>}
-              </div>
-            </>
-          )}
+        {/* Error */}
+        {(error || apiError) && (
+          <div className="error-banner">⚠ {error || apiError}</div>
+        )}
 
-          {activeView === 'stats' && (
-            <>
-              <SectionHeader title="STATS TABLE" sub="Click column headers to sort · Green = best · Red = below threshold" />
-              <StatsTable matches={filtered} />
-            </>
-          )}
+        {/* Loading */}
+        {loading && (
+          <div className="loading-screen">
+            <div className="loading-tri" />
+            <div className="loading-text">Connecting to database...</div>
+          </div>
+        )}
 
-        </main>
-      )}
+        {/* Pages */}
+        {!loading && (
+          <main className="page">
+            {activeView === 'dashboard' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Team Performance</span>
+                  <span className="section-sub">{filtered.length} matches · {wins} wins</span>
+                </div>
+                <PerformanceSummary matches={filtered} />
+                <div className="section-header">
+                  <span className="section-title">Recent Matches</span>
+                  <span className="section-sub">Latest 5 results</span>
+                </div>
+                <div className="match-list">
+                  {[...filtered].sort((a,b) => b.date.localeCompare(a.date)).slice(0,5)
+                    .map(m => <MatchRow key={m.id} match={m} onDelete={id => dispatch({ type:'DELETE_MATCH',id })} />)}
+                  {filtered.length === 0 && <div className="empty-state">No matches found for current filters</div>}
+                </div>
+              </>
+            )}
 
-      {showForm    && <MatchForm dispatch={dispatch} onClose={() => setShowForm(false)} refData={refData} />}
-      {aiMatchType && (
-        <AIUploadModal
-          matchType={aiMatchType}
-          dispatch={dispatch}
-          onClose={() => setAiMatchType(null)}
-          refData={refData}
-        />
-      )}
+            {activeView === 'matches' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Match History</span>
+                  <span className="section-sub">{filtered.length} matches</span>
+                </div>
+                <div className="match-list">
+                  {[...filtered].sort((a,b) => b.date.localeCompare(a.date))
+                    .map(m => <MatchRow key={m.id} match={m} onDelete={id => dispatch({ type:'DELETE_MATCH',id })} />)}
+                  {filtered.length === 0 && <div className="empty-state">No matches found</div>}
+                </div>
+              </>
+            )}
+
+            {activeView === 'players' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Player Breakdown</span>
+                  <span className="section-sub">Aggregated across filtered matches</span>
+                </div>
+                <div className="players-grid">
+                  {players.map(p => <PlayerCard key={p} player={p} matches={filtered} />)}
+                </div>
+                {players.length === 0 && <div className="empty-state">No player data — add some matches first</div>}
+              </>
+            )}
+
+            {activeView === 'stats' && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Stats Table</span>
+                  <span className="section-sub">Click columns to sort</span>
+                </div>
+                <StatsTable matches={filtered} />
+              </>
+            )}
+          </main>
+        )}
+      </div>
+
+      {showForm && <MatchForm dispatch={dispatch} onClose={() => setShowForm(false)} refData={refData} />}
+      {aiMatchType && <AIUploadModal matchType={aiMatchType} dispatch={dispatch} onClose={() => setAiMatchType(null)} refData={refData} />}
+    </div>
+  );
+}
+
+function FilterSel({ label, val, opts, onChange }) {
+  return (
+    <div className="filter-group">
+      <label className="filter-label">{label}</label>
+      <select className="filter-select" value={val} onChange={e => onChange(e.target.value)}>
+        {opts.map(o => <option key={o}>{o}</option>)}
+      </select>
     </div>
   );
 }
