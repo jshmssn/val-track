@@ -1,4 +1,7 @@
 {
   "buildCommand": "npx react-scripts build",
-  "outputDirectory": "build"
+  "outputDirectory": "build",
+  "env": {
+    "CI": "false"
+  }
 }
