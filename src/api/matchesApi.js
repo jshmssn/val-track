@@ -12,7 +12,7 @@
 const BASE =
   process.env.REACT_APP_API_URL ||
   "/backend";
-const TEAM_ID =
+export const TEAM_ID =
   process.env.REACT_APP_TEAM_ID || "aaaaaaaa-0000-0000-0000-000000000001";
 
 async function request(url, options = {}) {
@@ -151,6 +151,32 @@ export const aiApi = {
 export const referenceApi = {
   maps: async () => request(`${BASE}/api/reference.php?type=maps`),
   agents: async () => request(`${BASE}/api/reference.php?type=agents`),
+  players: async () => request(`${BASE}/api/reference.php?type=players&team_id=${TEAM_ID}`),
+  teams: async () => request(`${BASE}/api/reference.php?type=teams`),
+  team: async () => request(`${BASE}/api/reference.php?type=team&team_id=${TEAM_ID}`),
+  updateTeamName: async (name) =>
+    request(`${BASE}/api/reference.php?type=team&team_id=${TEAM_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    }),
   opponents: async () =>
     request(`${BASE}/api/reference.php?type=opponents&team_id=${TEAM_ID}`),
+  addMap: async (name) =>
+    request(`${BASE}/api/reference.php?type=maps`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  deleteMap: async (id) =>
+    request(`${BASE}/api/reference.php?type=maps&id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  addAgent: async (name, role = "Unassigned") =>
+    request(`${BASE}/api/reference.php?type=agents`, {
+      method: "POST",
+      body: JSON.stringify({ name, role }),
+    }),
+  deleteAgent: async (id) =>
+    request(`${BASE}/api/reference.php?type=agents&id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
