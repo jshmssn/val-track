@@ -9,9 +9,12 @@
 // Set REACT_APP_API_URL in your .env to override.
 // ============================================================
 
-const BASE =
-  process.env.REACT_APP_API_URL ||
-  "/backend";
+const BASE = (() => {
+  const raw = process.env.REACT_APP_API_URL;
+  if (typeof raw !== "string") return "/backend";
+  const clean = raw.trim().replace(/\/+$/, "");
+  return clean || "/backend";
+})();
 export const TEAM_ID =
   process.env.REACT_APP_TEAM_ID || "aaaaaaaa-0000-0000-0000-000000000001";
 
