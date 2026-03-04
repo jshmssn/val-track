@@ -171,11 +171,11 @@ export function AIUploadModal({ matchType, dispatch, onClose, refData }) {
                   {item.status==='error'&&'✕'}
                 </span>
 
-                {item.status==='done'&&item.extracted?.screenshotType==='timeline'&&(
+                {/* {item.status==='done'&&item.extracted?.screenshotType==='timeline'&&(
                   <button className="btn-primary" style={{ fontSize:10,padding:'4px 10px' }} onClick={() => { const pam=item.playerAgentMap||item.extracted?.playerAgentMap||[]; setReviewItem({...item,extracted:{...item.extracted,playerAgentMap:pam}}); }}>
                     Review →
                   </button>
-                )}
+                )} */}
 
                 {item.status!=='loading'&&(
                   <button style={{ background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:14,padding:'0 2px' }} onClick={() => removeItem(item.id)}>✕</button>
