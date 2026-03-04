@@ -20,8 +20,11 @@ error_reporting(E_ALL);
 // Buffer ALL output so PHP warnings never corrupt JSON with HTML
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
+$scopeTeamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? null);
 
 $method = $_SERVER['REQUEST_METHOD'];
 $id     = $_GET['id'] ?? null;
@@ -45,16 +48,12 @@ if ($method === 'GET' && $id !== null) {
 // ── GET all matches ──────────────────────────────────────────
 function getMatches(): void
 {
+    global $scopeTeamId;
     $db = getDB();
 
     // Optional filters via query params
-    $where  = ['1=1'];
-    $params = [];
-
-    if (!empty($_GET['team_id'])) {
-        $where[] = 'm.team_id = ?';
-        $params[] = $_GET['team_id'];
-    }
+    $where  = ['m.team_id = ?'];
+    $params = [$scopeTeamId];
     if (!empty($_GET['map'])) {
         $where[] = 'mp.name = ?';
         $params[] = $_GET['map'];
@@ -103,8 +102,9 @@ function getMatches(): void
 // ── GET single match ─────────────────────────────────────────
 function getMatch(string $id): void
 {
+    global $scopeTeamId;
     $db   = getDB();
-    $match = findMatchById($db, $id);
+    $match = findMatchById($db, $id, $scopeTeamId);
     if (!$match) sendError('Match not found', 404);
 
     $match['playerStats'] = getPlayerStatsForMatch($db, $id);
@@ -116,6 +116,7 @@ function getMatch(string $id): void
 // ── POST create match ────────────────────────────────────────
 function createMatch(): void
 {
+    global $scopeTeamId;
     $db   = getDB();
     $body = getJsonBody();
 
@@ -138,9 +139,9 @@ function createMatch(): void
 
     // Resolve or create opponent
     $opponentId = null;
-    if (!empty($body['opponent']) && !empty($body['team_id'])) {
+    if (!empty($body['opponent'])) {
         $opStmt = $db->prepare("SELECT id FROM opponents WHERE team_id = ? AND name = ?");
-        $opStmt->execute([$body['team_id'], $body['opponent']]);
+        $opStmt->execute([$scopeTeamId, $body['opponent']]);
         $opRow = $opStmt->fetch();
         if ($opRow) {
             $opponentId = $opRow['id'];
@@ -148,13 +149,13 @@ function createMatch(): void
             // Auto-create opponent
             $opponentId = uuid();
             $db->prepare("INSERT INTO opponents (id, team_id, name) VALUES (?, ?, ?)")
-                ->execute([$opponentId, $body['team_id'], $body['opponent']]);
+                ->execute([$opponentId, $scopeTeamId, $body['opponent']]);
         }
     }
 
     // Insert match
     $matchId  = uuid();
-    $teamId   = $body['team_id'] ?? 'aaaaaaaa-0000-0000-0000-000000000001'; // default demo team
+    $teamId   = $scopeTeamId;
     $db->prepare("
         INSERT INTO matches
             (id, team_id, opponent_id, map_id, played_at, type, result,
@@ -252,7 +253,7 @@ function createMatch(): void
     }
 
     // Return created match; avoid hard-failing with 404 if immediate lookup fails.
-    $created = findMatchById($db, $matchId);
+    $created = findMatchById($db, $matchId, $scopeTeamId);
     if ($created) {
         $created['playerStats'] = getPlayerStatsForMatch($db, $matchId);
         $created['teamMetrics'] = getTeamMetricsForMatch($db, $matchId);
@@ -281,6 +282,7 @@ function createMatch(): void
 // ── PUT update match ─────────────────────────────────────────
 function updateMatch(string $id): void
 {
+    global $authUser;
     $db   = getDB();
     $body = getJsonBody();
 
@@ -289,6 +291,7 @@ function updateMatch(string $id): void
     $check->execute([$id]);
     $existing = $check->fetch();
     if (!$existing) sendError('Match not found', 404);
+    assertTeamAccess($authUser, (string)$existing['team_id']);
 
     // Build dynamic SET clause from provided fields
     $allowed = [
@@ -370,7 +373,14 @@ function updateMatch(string $id): void
 // ── DELETE match ─────────────────────────────────────────────
 function deleteMatch(string $id): void
 {
+    global $authUser;
     $db   = getDB();
+    $check = $db->prepare("SELECT team_id FROM matches WHERE id = ?");
+    $check->execute([$id]);
+    $row = $check->fetch();
+    if (!$row) sendError('Match not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $stmt = $db->prepare("DELETE FROM matches WHERE id = ?");
     $stmt->execute([$id]);
 
@@ -433,9 +443,9 @@ function getTeamMetricsForMatch(PDO $db, string $matchId): ?array
     return $result;
 }
 
-function findMatchById(PDO $db, string $id): ?array
+function findMatchById(PDO $db, string $id, ?string $teamId = null): ?array
 {
-    $stmt = $db->prepare("
+    $sql = "
         SELECT
             m.id, m.team_id, m.played_at AS date, m.type, m.result,
             CONCAT(m.score_us, '-', m.score_them) AS score,
@@ -446,8 +456,15 @@ function findMatchById(PDO $db, string $id): ?array
         JOIN maps mp          ON m.map_id      = mp.id
         LEFT JOIN opponents o ON m.opponent_id = o.id
         WHERE m.id = ?
-    ");
-    $stmt->execute([$id]);
+    ";
+    $params = [$id];
+    if ($teamId !== null && $teamId !== '') {
+        $sql .= " AND m.team_id = ?";
+        $params[] = $teamId;
+    }
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
     $row = $stmt->fetch();
     return $row ?: null;
 }

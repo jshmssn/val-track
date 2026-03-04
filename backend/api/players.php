@@ -19,8 +19,11 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
+$scopeTeamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? null);
 
 $method = $_SERVER['REQUEST_METHOD'];
 $id     = $_GET['id'] ?? null;   // UUID string — do NOT cast to int
@@ -32,11 +35,11 @@ if ($method === 'GET') {
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         if (!$row) sendError('Player not found', 404);
+        assertTeamAccess($authUser, (string)$row['team_id']);
         sendSuccess($row);
     }
 
-    $teamId = $_GET['team_id'] ?? null;   // UUID string
-    if (!$teamId) sendError('team_id required', 422);
+    $teamId = $scopeTeamId;   // UUID string
 
     $stmt = $db->prepare("SELECT id, ign, role, is_active FROM players WHERE team_id = ? ORDER BY ign");
     $stmt->execute([$teamId]);
@@ -45,7 +48,7 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $body   = getJsonBody();
-    $teamId = requireParam($body, 'team_id');   // UUID string
+    $teamId = resolveScopedTeamId($authUser, $body['team_id'] ?? null);
     $ign    = trim(requireParam($body, 'ign'));
     $newId  = uuid();
 
@@ -55,6 +58,12 @@ if ($method === 'POST') {
 }
 
 if ($method === 'PUT' && $id !== null) {
+    $check = $db->prepare("SELECT team_id FROM players WHERE id = ?");
+    $check->execute([$id]);
+    $row = $check->fetch();
+    if (!$row) sendError('Player not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $body   = getJsonBody();
     $fields = [];
     $params = [];
@@ -71,6 +80,12 @@ if ($method === 'PUT' && $id !== null) {
 }
 
 if ($method === 'DELETE' && $id !== null) {
+    $check = $db->prepare("SELECT team_id FROM players WHERE id = ?");
+    $check->execute([$id]);
+    $row = $check->fetch();
+    if (!$row) sendError('Player not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $db->prepare("DELETE FROM players WHERE id = ?")->execute([$id]);
     sendSuccess(['deleted' => $id]);
 }

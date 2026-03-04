@@ -9,11 +9,12 @@
 // Set REACT_APP_API_URL in your .env to override.
 // ============================================================
 
-const BASE =
-  process.env.REACT_APP_API_URL ||
-  "/backend";
-export const TEAM_ID =
-  process.env.REACT_APP_TEAM_ID || "aaaaaaaa-0000-0000-0000-000000000001";
+const BASE = (() => {
+  const raw = process.env.REACT_APP_API_URL;
+  if (typeof raw !== "string") return "/backend";
+  const clean = raw.trim().replace(/\/+$/, "");
+  return clean || "/backend";
+})();
 
 async function request(url, options = {}) {
   const method = (options.method || "GET").toUpperCase();
@@ -28,6 +29,7 @@ async function request(url, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers,
+    credentials: "include",
   });
   const raw = await res.text();
   let json = null;
@@ -50,7 +52,7 @@ async function request(url, options = {}) {
 
 export const matchesApi = {
   getAll: async (filters = {}) => {
-    const params = new URLSearchParams({ team_id: TEAM_ID });
+    const params = new URLSearchParams();
     if (filters.map && filters.map !== "All") params.set("map", filters.map);
     if (filters.type && filters.type !== "All")
       params.set("type", filters.type);
@@ -62,7 +64,7 @@ export const matchesApi = {
   create: async (match) =>
     request(`${BASE}/api/matches.php`, {
       method: "POST",
-      body: JSON.stringify({ ...match, team_id: TEAM_ID }),
+      body: JSON.stringify(match),
     }),
   update: async (match) =>
     request(`${BASE}/api/matches.php?id=${match.id}`, {
@@ -74,12 +76,12 @@ export const matchesApi = {
 };
 
 export const playersApi = {
-  getAll: async () => request(`${BASE}/api/players.php?team_id=${TEAM_ID}`),
+  getAll: async () => request(`${BASE}/api/players.php`),
   getById: async (id) => request(`${BASE}/api/players.php?id=${id}`),
   create: async (player) =>
     request(`${BASE}/api/players.php`, {
       method: "POST",
-      body: JSON.stringify({ ...player, team_id: TEAM_ID }),
+      body: JSON.stringify(player),
     }),
   update: async (player) =>
     request(`${BASE}/api/players.php?id=${player.id}`, {
@@ -90,13 +92,13 @@ export const playersApi = {
 
 export const statsApi = {
   mapWinrates: async () =>
-    request(`${BASE}/api/stats.php?type=map_winrates&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=map_winrates`),
   agentStats: async () =>
-    request(`${BASE}/api/stats.php?type=agent_stats&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=agent_stats`),
   teamEconomics: async () =>
-    request(`${BASE}/api/stats.php?type=team_economics&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=team_economics`),
   playerAverages: async () =>
-    request(`${BASE}/api/stats.php?type=player_averages&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=player_averages`),
 };
 
 export const aiApi = {
@@ -117,50 +119,100 @@ export const aiApi = {
       formData.append("playerAgentMap", JSON.stringify(playerAgentMap));
     }
 
-    let res;
-    try {
-      res = await fetch(`${BASE}/api/ai_extract.php`, {
-        method: "POST",
-        body: formData,
-      });
-    } catch (err) {
-      throw new Error(
-        `AI request failed: ${err?.message || "Network/CORS error"}`,
-      );
+    const tryExtract = async (endpoint) => {
+      let res;
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          status: 0,
+          message: `AI request failed: ${err?.message || "Network/CORS error"}`,
+          data: null,
+        };
+      }
+
+      const raw = await res.text();
+      let json = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        // Keep fallback below for non-JSON upstream errors.
+      }
+
+      if (!res.ok) {
+        return {
+          ok: false,
+          status: res.status,
+          message: json?.error || `AI extraction failed (${res.status})`,
+          data: null,
+        };
+      }
+      if (!json?.success) {
+        return {
+          ok: false,
+          status: res.status,
+          message: json?.error || "AI extraction failed",
+          data: null,
+        };
+      }
+
+      return {
+        ok: true,
+        status: res.status,
+        message: "",
+        data: json.data,
+      };
+    };
+
+    const isApiExpirationFailure = (status, message) => {
+      const text = String(message || "").toLowerCase();
+      const isAuthOrQuotaStatus = status === 401 || status === 429;
+      const hasExpirationLikeText =
+        text.includes("expired") ||
+        text.includes("expiration") ||
+        text.includes("invalid") ||
+        text.includes("missing") ||
+        text.includes("quota") ||
+        text.includes("rate limit") ||
+        text.includes("token") ||
+        text.includes("api key");
+      const isHfRelated =
+        text.includes("hugging face") || text.includes("hf_api_key") || text.includes("hf");
+
+      return (isAuthOrQuotaStatus || hasExpirationLikeText) && isHfRelated;
+    };
+
+    const primary = await tryExtract(`${BASE}/api/ai_extract.php`);
+    if (primary.ok) return primary.data;
+
+    if (isApiExpirationFailure(primary.status, primary.message)) {
+      const fallback = await tryExtract(`${BASE}/api/ai_extract-OPENAI.php`);
+      if (fallback.ok) return fallback.data;
+      throw new Error(fallback.message || primary.message);
     }
 
-    const raw = await res.text();
-    let json = null;
-    try {
-      json = raw ? JSON.parse(raw) : null;
-    } catch (_) {
-      // Keep fallback below for non-JSON upstream errors.
-    }
-
-    if (!res.ok) {
-      const msg = json?.error || `AI extraction failed (${res.status})`;
-      throw new Error(msg);
-    }
-    if (!json?.success) {
-      throw new Error(json?.error || "AI extraction failed");
-    }
-    return json.data;
+    throw new Error(primary.message);
   },
 };
 
 export const referenceApi = {
   maps: async () => request(`${BASE}/api/reference.php?type=maps`),
   agents: async () => request(`${BASE}/api/reference.php?type=agents`),
-  players: async () => request(`${BASE}/api/reference.php?type=players&team_id=${TEAM_ID}`),
+  players: async () => request(`${BASE}/api/reference.php?type=players`),
   teams: async () => request(`${BASE}/api/reference.php?type=teams`),
-  team: async () => request(`${BASE}/api/reference.php?type=team&team_id=${TEAM_ID}`),
+  team: async () => request(`${BASE}/api/reference.php?type=team`),
   updateTeamName: async (name) =>
-    request(`${BASE}/api/reference.php?type=team&team_id=${TEAM_ID}`, {
+    request(`${BASE}/api/reference.php?type=team`, {
       method: "PUT",
       body: JSON.stringify({ name }),
     }),
   opponents: async () =>
-    request(`${BASE}/api/reference.php?type=opponents&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/reference.php?type=opponents`),
   addMap: async (name) =>
     request(`${BASE}/api/reference.php?type=maps`, {
       method: "POST",
@@ -182,13 +234,11 @@ export const referenceApi = {
 };
 
 export const notesApi = {
-  getAll: async () =>
-    request(`${BASE}/api/coaching_notes.php?team_id=${TEAM_ID}`),
+  getAll: async () => request(`${BASE}/api/coaching_notes.php`),
   upsert: async ({ matchId, playerId, body, title = null, tags = null }) =>
     request(`${BASE}/api/coaching_notes.php`, {
       method: "POST",
       body: JSON.stringify({
-        team_id: TEAM_ID,
         match_id: matchId,
         player_id: playerId,
         title,
@@ -198,20 +248,18 @@ export const notesApi = {
     }),
   removeByContext: async ({ matchId, playerId }) =>
     request(
-      `${BASE}/api/coaching_notes.php?team_id=${encodeURIComponent(TEAM_ID)}&match_id=${encodeURIComponent(matchId)}&player_id=${encodeURIComponent(playerId)}`,
+      `${BASE}/api/coaching_notes.php?match_id=${encodeURIComponent(matchId)}&player_id=${encodeURIComponent(playerId)}`,
       { method: "DELETE" },
     ),
 };
 
 export const compositionApi = {
-  list: async () =>
-    request(`${BASE}/api/compositions.php?team_id=${TEAM_ID}`),
+  list: async () => request(`${BASE}/api/compositions.php`),
   createComposition: async ({ name, notes = "", agents = [] }) =>
     request(`${BASE}/api/compositions.php`, {
       method: "POST",
       body: JSON.stringify({
         entity: "composition",
-        team_id: TEAM_ID,
         name,
         notes,
         agents,

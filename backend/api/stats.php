@@ -18,13 +18,15 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') sendError('Method not allowed', 405);
 
 $type   = $_GET['type']    ?? null;
-$teamId = $_GET['team_id'] ?? null;
+$teamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? null);
 
 switch ($type) {
     case 'map_winrates':

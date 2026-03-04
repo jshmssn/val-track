@@ -4,7 +4,7 @@ import {
   AGENTS as FALLBACK_AGENTS,
   MAPS as FALLBACK_MAPS,
 } from "../data/sampleData";
-import { styles, C } from "../styles/tokens";
+import { styles } from "../styles/tokens";
 
 function buildBlank(playerNames) {
   const names = playerNames?.length > 0 ? playerNames : FALLBACK_PLAYERS;
@@ -31,8 +31,10 @@ function buildBlank(playerNames) {
     teamMetrics: {
       atkRounds: "",
       atkWins: "",
+      atkLosses: "",
       defRounds: "",
       defWins: "",
+      defLosses: "",
       atkPistolWin: "",
       defPistolWin: "",
       otRounds: "",
@@ -51,6 +53,13 @@ function normalizeAcs(value) {
 
 function sortPlayerStatsByAcs(rows) {
   return [...rows].sort((a, b) => normalizeAcs(b.acs) - normalizeAcs(a.acs));
+}
+
+function computeLosses(rounds, wins, fallback = "") {
+  const r = Number(rounds);
+  const w = Number(wins);
+  if (!Number.isFinite(r) || !Number.isFinite(w)) return fallback;
+  return Math.max(0, r - w);
 }
 
 export function MatchForm({
@@ -117,8 +126,10 @@ export function MatchForm({
       teamMetrics: {
         atkRounds: tm.atkRounds ?? "",
         atkWins: tm.atkWins ?? "",
+        atkLosses: tm.atkLosses ?? computeLosses(tm.atkRounds, tm.atkWins, ""),
         defRounds: tm.defRounds ?? "",
         defWins: tm.defWins ?? "",
+        defLosses: tm.defLosses ?? computeLosses(tm.defRounds, tm.defWins, ""),
         atkPistolWin: tm.atkPistolWin ?? "",
         defPistolWin: tm.defPistolWin ?? "",
         otRounds: tm.otRounds ?? "",
@@ -162,6 +173,19 @@ export function MatchForm({
       return;
     }
     setSaving(true);
+    const teamMetricsWithLosses = {
+      ...form.teamMetrics,
+      atkLosses: computeLosses(
+        form.teamMetrics.atkRounds,
+        form.teamMetrics.atkWins,
+        form.teamMetrics.atkLosses,
+      ),
+      defLosses: computeLosses(
+        form.teamMetrics.defRounds,
+        form.teamMetrics.defWins,
+        form.teamMetrics.defLosses,
+      ),
+    };
     const result = await dispatch({
       type: "ADD_MATCH",
       payload: {
@@ -179,12 +203,12 @@ export function MatchForm({
         })),
         teamMetrics: {
           ...Object.fromEntries(
-            Object.entries(form.teamMetrics)
+            Object.entries(teamMetricsWithLosses)
               .filter(([k]) => !["atkPistolWin", "defPistolWin"].includes(k))
               .map(([k, v]) => [k, +v]),
           ),
-          atkPistolWin: form.teamMetrics.atkPistolWin,
-          defPistolWin: form.teamMetrics.defPistolWin,
+          atkPistolWin: teamMetricsWithLosses.atkPistolWin,
+          defPistolWin: teamMetricsWithLosses.defPistolWin,
         },
       },
     });
@@ -335,8 +359,14 @@ export function MatchForm({
               const title = isAtk ? "Attack" : "Defense";
               const roundsKey = isAtk ? "atkRounds" : "defRounds";
               const winsKey = isAtk ? "atkWins" : "defWins";
+              const lossesKey = isAtk ? "atkLosses" : "defLosses";
               const pistolKey = isAtk ? "atkPistolWin" : "defPistolWin";
               const short = isAtk ? "ATK" : "DEF";
+              const computedLosses = computeLosses(
+                form.teamMetrics[roundsKey],
+                form.teamMetrics[winsKey],
+                form.teamMetrics[lossesKey],
+              );
               const halfSuffix =
                 firstHalfSide === side
                   ? " (1st Half)"
@@ -363,14 +393,16 @@ export function MatchForm({
                     {[
                       [roundsKey, `${short} Rounds`],
                       [winsKey, `${short} Wins`],
+                      [lossesKey, `${short} Loss`],
                     ].map(([k, l]) => (
                       <FF
                         key={k}
                         label={l}
                         type="number"
-                        value={form.teamMetrics[k]}
+                        value={k === lossesKey ? computedLosses : form.teamMetrics[k]}
                         onChange={(v) => setMetric(k, v)}
                         placeholder="0"
+                        readOnly={k === lossesKey}
                       />
                     ))}
                     <FS
@@ -450,7 +482,14 @@ export function MatchForm({
   );
 }
 
-function FF({ label, value, onChange, type = "text", placeholder }) {
+function FF({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  readOnly = false,
+}) {
   return (
     <div className="form-field">
       <label className="form-label">{label}</label>
@@ -459,6 +498,7 @@ function FF({ label, value, onChange, type = "text", placeholder }) {
         type={type}
         value={value}
         placeholder={placeholder}
+        readOnly={readOnly}
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
@@ -489,3 +529,5 @@ function FS({ label, value, options, onChange }) {
     </div>
   );
 }
+
+

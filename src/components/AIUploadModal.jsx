@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { C, styles } from "../styles/tokens";
 import { aiApi } from "../api/matchesApi";
 import { MatchForm } from "./MatchForm";
 
@@ -233,6 +232,24 @@ export function AIUploadModal({
 
   const normalizeKey = (name) =>
     (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizeExtractedText = (value) => {
+    const text = String(value ?? "").trim();
+    if (!text) return "";
+    const lower = text.toLowerCase();
+    if (lower === "null" || lower === "unknown" || lower === "n/a") return "";
+    return text;
+  };
+  const normalizeMapValue = (value) => {
+    const raw = normalizeExtractedText(value);
+    if (!raw) return "";
+    const cleaned = raw.replace(/^map\s*[-:]\s*/i, "").trim();
+    if (!cleaned) return "";
+    const knownMaps = refData?.mapNames || [];
+    const match = knownMaps.find(
+      (mapName) => mapName.toLowerCase() === cleaned.toLowerCase(),
+    );
+    return match || cleaned;
+  };
 
   const mergeAndReview = () => {
     if (!doneContext || !doneScoreboard) return;
@@ -318,6 +335,10 @@ export function AIUploadModal({
       });
     }
 
+    const summaryMap = normalizeMapValue(doneSummary?.extracted?.map);
+    const scoreboardMap = normalizeMapValue(doneScoreboard?.extracted?.map);
+    const preferredMap = summaryMap || scoreboardMap;
+    const mapWhenSummaryMissing = scoreboardMap || summaryMap;
     const merged = {
       ...doneScoreboard.extracted,
       playerStats: pam.length > 0 ? backfilled : scoreboardStats,
@@ -327,7 +348,8 @@ export function AIUploadModal({
         ...doneContext.extracted.teamMetrics,
       },
       date: doneScoreboard.extracted.date || doneContext.extracted.date,
-      map: doneScoreboard.extracted.map || doneContext.extracted.map,
+      // If Summary map is missing, force Scoreboard map from the top-left MAP label.
+      map: summaryMap ? preferredMap : mapWhenSummaryMissing,
       result: doneScoreboard.extracted.result || doneContext.extracted.result,
       score: doneScoreboard.extracted.score || doneContext.extracted.score,
     };
@@ -529,7 +551,7 @@ export function AIUploadModal({
                       {fmtBytes(item.file.size)}
                       {item.status === "done" &&
                         item.extracted &&
-                        ` · ${item.extracted.map || "?"} · ${item.extracted.result || "?"} ${item.extracted.score || ""}`}
+                        ` · ${normalizeMapValue(item.extracted.map) || "?"} · ${normalizeExtractedText(item.extracted.result) || "?"} ${normalizeExtractedText(item.extracted.score) || ""}`}
                       {item.status === "error" && (
                         <span style={{ color: "var(--red)" }}>
                           {" "}

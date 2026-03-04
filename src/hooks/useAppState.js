@@ -5,7 +5,7 @@
 // - Mutations (ADD/DELETE/UPDATE) call PHP API then update state
 // ============================================================
 
-import { useReducer, useEffect, useState } from 'react';
+import { useReducer, useEffect, useState, useCallback } from 'react';
 import { matchesApi } from '../api/matchesApi';
 
 export const initialState = {
@@ -34,14 +34,26 @@ function appReducer(state, action) {
 export function useAppState() {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const [apiError, setApiError] = useState(null);
+  const loadMatches = useCallback(async (cancelledRef = { cancelled: false }) => {
+    dispatch({ type: 'SET_LOADING', value: true });
+    try {
+      const matches = await matchesApi.getAll();
+      if (!cancelledRef.cancelled) {
+        dispatch({ type: 'SET_MATCHES', payload: matches });
+      }
+    } catch (err) {
+      if (!cancelledRef.cancelled) {
+        dispatch({ type: 'SET_ERROR', message: err.message });
+      }
+    }
+  }, []);
 
   // Load matches on mount
   useEffect(() => {
-    let cancelled = false;
-    matchesApi.getAll()
-      .then((matches) => { if (!cancelled) dispatch({ type: 'SET_MATCHES', payload: matches }); })
-      .catch((err)    => { if (!cancelled) dispatch({ type: 'SET_ERROR', message: err.message }); });
-    return () => { cancelled = true; };
+    const ref = { cancelled: false };
+    loadMatches(ref);
+    return () => { ref.cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // API-aware dispatch
@@ -75,5 +87,9 @@ export function useAppState() {
     }
   }
 
-  return { state: { ...state, apiError }, dispatch: apiDispatch };
+  const reloadMatches = useCallback(async () => {
+    await loadMatches({ cancelled: false });
+  }, [loadMatches]);
+
+  return { state: { ...state, apiError }, dispatch: apiDispatch, reloadMatches };
 }

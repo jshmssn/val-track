@@ -9,8 +9,10 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -26,10 +28,10 @@ if ($method === 'GET') {
 
 function getNotes(): void
 {
+    global $authUser;
     $db = getDB();
 
-    $teamId = $_GET['team_id'] ?? '';
-    if ($teamId === '') sendError('Missing required field: team_id', 422);
+    $teamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? '');
 
     $where = ['cn.team_id = ?', 'cn.valid = 1'];
     $params = [$teamId];
@@ -66,10 +68,11 @@ function getNotes(): void
 
 function upsertNote(): void
 {
+    global $authUser;
     $db = getDB();
     $body = getJsonBody();
 
-    $teamId = requireParam($body, 'team_id');
+    $teamId = resolveScopedTeamId($authUser, $body['team_id'] ?? '');
     $matchId = requireParam($body, 'match_id');
     $playerId = requireParam($body, 'player_id');
     $noteBody = trim((string)($body['body'] ?? ''));
@@ -80,9 +83,8 @@ function upsertNote(): void
 
     $title = isset($body['title']) ? trim((string)$body['title']) : null;
     $tags = isset($body['tags']) ? trim((string)$body['tags']) : null;
-    $createdBy = isset($body['created_by']) && $body['created_by'] !== ''
-        ? (string)$body['created_by']
-        : null;
+    $createdBy = (string)($authUser['id'] ?? '');
+    if ($createdBy === '') $createdBy = null;
 
     // Keep one canonical note per team+match+player context.
     $find = $db->prepare("
@@ -150,9 +152,10 @@ function upsertNote(): void
 
 function deleteByContext(): void
 {
+    global $authUser;
     $db = getDB();
 
-    $teamId = $_GET['team_id'] ?? '';
+    $teamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? '');
     $matchId = $_GET['match_id'] ?? '';
     $playerId = $_GET['player_id'] ?? '';
 

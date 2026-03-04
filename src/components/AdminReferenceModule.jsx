@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { referenceApi } from '../api/matchesApi';
 
 const AGENT_ROLES = ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Unassigned'];
@@ -7,11 +7,10 @@ function normalizeName(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-export function AdminReferenceModule({ maps = [], agents = [], team = null, onRefresh }) {
+export function AdminReferenceModule({ maps = [], agents = [], onRefresh }) {
   const [mapName, setMapName] = useState('');
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('Unassigned');
-  const [teamName, setTeamName] = useState(team?.name || '');
   const [busyKey, setBusyKey] = useState('');
   const [notice, setNotice] = useState({ type: '', text: '' });
   const [writeBlocked, setWriteBlocked] = useState(false);
@@ -30,10 +29,6 @@ export function AdminReferenceModule({ maps = [], agents = [], team = null, onRe
     () => new Set(sortedAgents.map((a) => normalizeName(a.name).toLowerCase())),
     [sortedAgents],
   );
-
-  useEffect(() => {
-    setTeamName(team?.name || '');
-  }, [team?.name]);
 
   async function runAction(key, fn, okMessage) {
     try {
@@ -68,13 +63,6 @@ export function AdminReferenceModule({ maps = [], agents = [], team = null, onRe
     runAction('add-map', () => referenceApi.addMap(name), `Map "${name}" added.`).then(() => setMapName(''));
   }
 
-  function submitTeam(e) {
-    e.preventDefault();
-    const name = normalizeName(teamName);
-    if (!name) return setNotice({ type: 'err', text: 'Team name is required.' });
-    runAction('edit-team', () => referenceApi.updateTeamName(name), `Team renamed to "${name}".`);
-  }
-
   function submitAgent(e) {
     e.preventDefault();
     const name = normalizeName(agentName);
@@ -99,10 +87,6 @@ export function AdminReferenceModule({ maps = [], agents = [], team = null, onRe
 
       <div className="adminref-kpis">
         <div className="adminref-kpi">
-          <span className="kpi-label">Team</span>
-          <strong className="kpi-value">{team?.name || 'Unknown team'}</strong>
-        </div>
-        <div className="adminref-kpi">
           <span className="kpi-label">Active Maps</span>
           <strong className="kpi-value">{sortedMaps.length}</strong>
         </div>
@@ -113,25 +97,6 @@ export function AdminReferenceModule({ maps = [], agents = [], team = null, onRe
       </div>
 
       <div className="adminref-grid">
-        <section className="adminref-panel adminref-panel-wide">
-          <div className="adminref-head">
-            <h3>Team Profile</h3>
-            <span className="adminref-idpill">{team?.id || 'Unknown team'}</span>
-          </div>
-          <p className="adminref-help">Update the team display name used across dashboard modules.</p>
-          <form className="adminref-form adminref-form-team" onSubmit={submitTeam}>
-            <input
-              className="adminref-input"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              placeholder="Team name"
-            />
-            <button className="adminref-btn" type="submit" disabled={writeBlocked || busyKey === 'edit-team'}>
-              {busyKey === 'edit-team' ? 'Saving...' : 'Save Team Name'}
-            </button>
-          </form>
-        </section>
-
         <section className="adminref-panel">
           <div className="adminref-head">
             <h3>Maps</h3>

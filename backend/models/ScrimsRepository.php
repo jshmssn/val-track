@@ -19,7 +19,7 @@ class ScrimsRepository
     // ── Fetch raw scrim rows ─────────────────────────────────
 
     public function fetchRows(
-        int     $teamId,
+        string  $teamId,
         ?string $map          = null,
         ?string $type         = null,
         ?string $opponent     = null,
@@ -105,7 +105,7 @@ class ScrimsRepository
     // ── Map win% aggregation (pure SQL version) ──────────────
 
     public function fetchMapWinStats(
-        int     $teamId,
+        string  $teamId,
         ?string $type      = null,
         ?string $dateStart = null,
         ?string $dateEnd   = null

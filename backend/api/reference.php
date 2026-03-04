@@ -9,8 +9,10 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $type = $_GET['type'] ?? null;
@@ -19,6 +21,9 @@ $id = $_GET['id'] ?? null;
 $db = getDB();
 
 if (!$type) sendError('type is required', 422);
+if (in_array((string)$type, ['players', 'opponents', 'team'], true)) {
+    $teamId = resolveScopedTeamId($authUser, $teamId);
+}
 
 switch ($method) {
     case 'GET':
@@ -39,6 +44,7 @@ switch ($method) {
 
 function handleGet(PDO $db, string $type, ?string $teamId): void
 {
+    global $authUser;
     switch ($type) {
         case 'maps':
             $rows = $db->query("SELECT id, name FROM maps WHERE is_active = 1 ORDER BY name")->fetchAll();
@@ -61,7 +67,13 @@ function handleGet(PDO $db, string $type, ?string $teamId): void
             sendSuccess(array_column($stmt->fetchAll(), 'name'));
             break;
         case 'teams':
-            $rows = $db->query("SELECT id, name FROM teams ORDER BY name")->fetchAll();
+            if (isSuperAdminUser($authUser)) {
+                $rows = $db->query("SELECT id, name FROM teams ORDER BY name")->fetchAll();
+            } else {
+                $stmt = $db->prepare("SELECT id, name FROM teams WHERE id = ? ORDER BY name");
+                $stmt->execute([$teamId]);
+                $rows = $stmt->fetchAll();
+            }
             sendSuccess($rows);
             break;
         case 'team':
