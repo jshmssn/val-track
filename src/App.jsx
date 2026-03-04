@@ -12,6 +12,8 @@ import { MapStatsModule } from "./components/MapStatsModule";
 import { AgentMapStatsModule } from "./components/AgentMapStatsModule";
 import { TeamCompositionTracker } from "./components/TeamCompositionTracker";
 import { PlayerFormTracker } from "./components/PlayerFormTracker";
+import { TeamPlaybookModule } from "./components/TeamPlaybookModule";
+import { TournamentPrepCenter } from "./components/TournamentPrepCenter";
 import { AdminReferenceModule } from "./components/AdminReferenceModule";
 import { MatchForm } from "./components/MatchForm";
 import { MatchRow } from "./components/MatchRow";
@@ -51,6 +53,8 @@ const NAV = [
   { id: "mapStats", label: "Map Stats", mobileLabel: "Maps", icon: "maps" },
   { id: "agentMap", label: "Agent Map", mobileLabel: "Agents", icon: "agents" },
   { id: "teamComp", label: "Team Comp", mobileLabel: "Comp", icon: "comp" },
+  { id: "playbook", label: "Playbook", mobileLabel: "Playbook", icon: "playbook" },
+  { id: "tournamentPrep", label: "Tournament Prep", mobileLabel: "Prep", icon: "prep" },
   { id: "formTracker", label: "Player Tracker", mobileLabel: "Player Tracker", icon: "form" },
   { id: "stats", label: "Stats", mobileLabel: "Stats", icon: "stats" },
   { id: "admin", label: "Admin", mobileLabel: "Admin", icon: "admin" },
@@ -63,6 +67,8 @@ const PAGE_TITLES = {
   mapStats: "Map Stats",
   agentMap: "Agent & Map Stats",
   teamComp: "Team Composition Tracker",
+  playbook: "Team Playbook",
+  tournamentPrep: "Tournament Prep Center",
   formTracker: "Player Form",
   stats: "Stats Table",
   admin: "Admin",
@@ -146,6 +152,22 @@ function NavIcon({ name }) {
         <svg {...common}>
           <polyline points="3,17 8,11 13,14 21,6" />
           <polyline points="14,6 21,6 21,13" />
+        </svg>
+      );
+    case "playbook":
+      return (
+        <svg {...common}>
+          <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H20v16.5H7.5A2.5 2.5 0 0 0 5 22V5.5z" />
+          <path d="M5 5.5A2.5 2.5 0 0 0 2.5 3H2v16.5h.5A2.5 2.5 0 0 1 5 22" />
+          <path d="M9 8h8M9 12h8M9 16h6" />
+        </svg>
+      );
+    case "prep":
+      return (
+        <svg {...common}>
+          <path d="M4 6h16v12H4z" />
+          <path d="M4 10h16M8 3v6M16 3v6" />
+          <path d="M9 15h3M15 15h1" />
         </svg>
       );
     default:
@@ -687,6 +709,34 @@ export default function App() {
                   </span>
                 </div>
                 <PlayerFormTracker matches={filtered} />
+              </>
+            )}
+            {activeView === "playbook" && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Team Playbook / Strategy Library</span>
+                  <span className="section-sub">
+                    Save reusable protocols, executes, and anti-strats by map
+                  </span>
+                </div>
+                <TeamPlaybookModule
+                  matches={matches}
+                  mapNames={refData.mapNames}
+                />
+              </>
+            )}
+            {activeView === "tournamentPrep" && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Tournament Prep Center</span>
+                  <span className="section-sub">
+                    Build opponent plans, map veto priorities, and match-day checklist
+                  </span>
+                </div>
+                <TournamentPrepCenter
+                  matches={matches}
+                  mapNames={refData.mapNames}
+                />
               </>
             )}
             {activeView === "stats" && (

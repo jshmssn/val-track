@@ -2731,3 +2731,232 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 }
 
+/* Team playbook module */
+.playbook-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.playbook-summary,
+.prep-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.playbook-card,
+.prep-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.playbook-card p,
+.prep-card p {
+  margin: 0;
+  font-size: 11px;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  text-transform: uppercase;
+}
+
+.playbook-card strong,
+.prep-card strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 24px;
+}
+
+.playbook-create,
+.playbook-library,
+.prep-create,
+.prep-content {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.playbook-create h3,
+.prep-create h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.playbook-grid,
+.prep-create-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.playbook-input,
+.playbook-textarea {
+  width: 100%;
+  margin-top: 8px;
+  background: #0a1220;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 11px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.playbook-textarea {
+  resize: vertical;
+}
+
+.playbook-toolbar {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 8px;
+}
+
+.playbook-content,
+.prep-content {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 10px;
+}
+
+.playbook-list,
+.prep-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.playbook-list-item {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.01);
+  border-radius: 10px;
+  color: var(--text);
+  text-align: left;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.playbook-list-item strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.playbook-list-item span {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--mono);
+}
+
+.playbook-list-item.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.playbook-editor,
+.prep-editor {
+  min-width: 0;
+}
+
+.playbook-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Tournament prep module */
+.prep-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.prep-advice {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.prep-advice strong {
+  color: var(--emerald);
+}
+
+.prep-veto-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.prep-veto-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+  padding: 9px;
+}
+
+.prep-veto-map {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.prep-veto-card label {
+  display: block;
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 6px;
+}
+
+.prep-veto-card input[type="range"] {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.prep-checklist {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.prep-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.prep-check-item span {
+  color: var(--text2);
+}
+
+.prep-copy-status {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--emerald);
+}
+
+@media (max-width: 980px) {
+  .playbook-content,
+  .prep-content {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
