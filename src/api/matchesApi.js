@@ -11,9 +11,18 @@
 
 const BASE = (() => {
   const raw = process.env.REACT_APP_API_URL;
-  if (typeof raw !== "string") return "/backend";
+  if (typeof raw !== "string") {
+    if (typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)) {
+      return "/val-track/backend";
+    }
+    return "/backend";
+  }
   const clean = raw.trim().replace(/\/+$/, "");
-  return clean || "/backend";
+  if (clean) return clean;
+  if (typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)) {
+    return "/val-track/backend";
+  }
+  return "/backend";
 })();
 
 async function request(url, options = {}) {

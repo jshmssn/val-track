@@ -39,8 +39,8 @@ module.exports = function (app) {
       ? "https://vl-trck.shares.zrok.io/val-track/backend"
       : "http://localhost/val-track/backend");
 
-  // Frontend calls /backend/api/*.php on the same origin.
-  // CRA dev server forwards those to local XAMPP backend.
+  // Frontend may call either /backend/api/* or /val-track/backend/api/*.
+  // CRA dev server forwards both to the configured backend target.
   app.use(
     "/backend/api",
     createProxyMiddleware({
@@ -49,6 +49,19 @@ module.exports = function (app) {
       secure: false,
       pathRewrite: {
         "^/backend/api": "/api",
+      },
+      logLevel: "warn",
+    }),
+  );
+
+  app.use(
+    "/val-track/backend/api",
+    createProxyMiddleware({
+      target,
+      changeOrigin: true,
+      secure: false,
+      pathRewrite: {
+        "^/val-track/backend/api": "/api",
       },
       logLevel: "warn",
     }),
