@@ -42,7 +42,7 @@ backend/
 
 4. Copy `.env.example` → `.env` in the React root:
    ```
-   REACT_APP_API_URL=https://vl-trck.shares.zrok.io/backend
+   REACT_APP_API_URL=https://vl-trck.shares.zrok.io/val-track/backend
    REACT_APP_TEAM_ID=aaaaaaaa-0000-0000-0000-000000000001
    ```
 
