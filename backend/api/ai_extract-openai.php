@@ -309,11 +309,16 @@ function computeTeamMetricsFromSummary(array $summary): array
         }
     }
 
+    $atkLosses = max(0, $atkRounds - $atkWins);
+    $defLosses = max(0, $defRounds - $defWins);
+
     return [
         'atkRounds'      => $atkRounds,
         'atkWins'        => $atkWins,
+        'atkLosses'      => $atkLosses,
         'defRounds'      => $defRounds,
         'defWins'        => $defWins,
+        'defLosses'      => $defLosses,
         'otRounds'       => $otRounds,
         'otWins'         => $otWins,
         'otLosses'       => $otLosses,
@@ -437,8 +442,10 @@ SUMMARY);
     $extracted['teamMetrics'] = [
         'atkRounds'      => $teamMetrics['atkRounds'],
         'atkWins'        => $teamMetrics['atkWins'],
+        'atkLosses'      => $teamMetrics['atkLosses'],
         'defRounds'      => $teamMetrics['defRounds'],
         'defWins'        => $teamMetrics['defWins'],
+        'defLosses'      => $teamMetrics['defLosses'],
         'otRounds'       => $teamMetrics['otRounds'],
         'otWins'         => $teamMetrics['otWins'],
         'otLosses'       => $teamMetrics['otLosses'],
@@ -486,6 +493,7 @@ For each extracted player, read:
 - agent: agent name TEXT shown under the player name (do not guess from the icon)
 - acs: number in AVG COMBAT SCORE column
 - kills, deaths, assists: from the KDA column formatted like "K / D / A"
+- map: read map from top-left header line formatted like "MAP - BIND" (return only the map name, e.g. "Bind")
 
 IGNORE:
 - rank icons
@@ -513,6 +521,7 @@ CRITICAL RULES:
 - Extract exactly 5 teal/green players.
 - Agent must come from the TEXT label under the player name.
 - KDA must be parsed into kills/deaths/assists integers.
+- Always prioritize the top-left "MAP - <name>" label for map.
 SCOREBOARD);
 
 $rawText   = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $scoreboardMessages));
@@ -560,8 +569,10 @@ if (!isset($extracted['teamMetrics']) || !is_array($extracted['teamMetrics'])) {
     $extracted['teamMetrics'] = [
         'atkRounds'      => 0,
         'atkWins'        => 0,
+        'atkLosses'      => 0,
         'defRounds'      => 0,
         'defWins'        => 0,
+        'defLosses'      => 0,
         'otRounds'       => 0,
         'otWins'         => 0,
         'otLosses'       => 0,

@@ -117,34 +117,83 @@ export const aiApi = {
       formData.append("playerAgentMap", JSON.stringify(playerAgentMap));
     }
 
-    let res;
-    try {
-      res = await fetch(`${BASE}/api/ai_extract.php`, {
-        method: "POST",
-        body: formData,
-      });
-    } catch (err) {
-      throw new Error(
-        `AI request failed: ${err?.message || "Network/CORS error"}`,
-      );
+    const tryExtract = async (endpoint) => {
+      let res;
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          body: formData,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          status: 0,
+          message: `AI request failed: ${err?.message || "Network/CORS error"}`,
+          data: null,
+        };
+      }
+
+      const raw = await res.text();
+      let json = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        // Keep fallback below for non-JSON upstream errors.
+      }
+
+      if (!res.ok) {
+        return {
+          ok: false,
+          status: res.status,
+          message: json?.error || `AI extraction failed (${res.status})`,
+          data: null,
+        };
+      }
+      if (!json?.success) {
+        return {
+          ok: false,
+          status: res.status,
+          message: json?.error || "AI extraction failed",
+          data: null,
+        };
+      }
+
+      return {
+        ok: true,
+        status: res.status,
+        message: "",
+        data: json.data,
+      };
+    };
+
+    const isApiExpirationFailure = (status, message) => {
+      const text = String(message || "").toLowerCase();
+      const isAuthOrQuotaStatus = status === 401 || status === 429;
+      const hasExpirationLikeText =
+        text.includes("expired") ||
+        text.includes("expiration") ||
+        text.includes("invalid") ||
+        text.includes("missing") ||
+        text.includes("quota") ||
+        text.includes("rate limit") ||
+        text.includes("token") ||
+        text.includes("api key");
+      const isHfRelated =
+        text.includes("hugging face") || text.includes("hf_api_key") || text.includes("hf");
+
+      return (isAuthOrQuotaStatus || hasExpirationLikeText) && isHfRelated;
+    };
+
+    const primary = await tryExtract(`${BASE}/api/ai_extract.php`);
+    if (primary.ok) return primary.data;
+
+    if (isApiExpirationFailure(primary.status, primary.message)) {
+      const fallback = await tryExtract(`${BASE}/api/ai_extract-OPENAI.php`);
+      if (fallback.ok) return fallback.data;
+      throw new Error(fallback.message || primary.message);
     }
 
-    const raw = await res.text();
-    let json = null;
-    try {
-      json = raw ? JSON.parse(raw) : null;
-    } catch (_) {
-      // Keep fallback below for non-JSON upstream errors.
-    }
-
-    if (!res.ok) {
-      const msg = json?.error || `AI extraction failed (${res.status})`;
-      throw new Error(msg);
-    }
-    if (!json?.success) {
-      throw new Error(json?.error || "AI extraction failed");
-    }
-    return json.data;
+    throw new Error(primary.message);
   },
 };
 

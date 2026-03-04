@@ -55,6 +55,13 @@ const NAV = [
   { id: "stats", label: "Stats", mobileLabel: "Stats", icon: "stats" },
   { id: "admin", label: "Admin", mobileLabel: "Admin", icon: "admin" },
 ];
+const MOBILE_PRIMARY_NAV_IDS = ["dashboard", "matches", "players", "stats"];
+const MOBILE_PRIMARY_NAV = NAV.filter((n) =>
+  MOBILE_PRIMARY_NAV_IDS.includes(n.id),
+);
+const MOBILE_MORE_NAV = NAV.filter(
+  (n) => !MOBILE_PRIMARY_NAV_IDS.includes(n.id),
+);
 
 const PAGE_TITLES = {
   dashboard: "Overview",
@@ -148,6 +155,12 @@ function NavIcon({ name }) {
           <polyline points="14,6 21,6 21,13" />
         </svg>
       );
+    case "menu":
+      return (
+        <svg {...common}>
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -213,7 +226,9 @@ export default function App() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [alertState, setAlertState] = useState({ open: false, title: "", message: "" });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, id: null, label: "" });
+  const [showMobileNavMenu, setShowMobileNavMenu] = useState(false);
   const dropRef = useRef();
+  const mobileMenuRef = useRef();
   const { matches, filters, activeView, loading, error, apiError } = state;
   const showAlert = (message, title = "Notice") =>
     setAlertState({ open: true, title, message: String(message || "") });
@@ -233,6 +248,17 @@ export default function App() {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [showDrop]);
+
+  useEffect(() => {
+    if (!showMobileNavMenu) return;
+    const h = (e) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target)) {
+        setShowMobileNavMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [showMobileNavMenu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -342,8 +368,11 @@ export default function App() {
           {NAV.map((n) => (
             <button
               key={n.id}
-              className={`nav-item${activeView === n.id ? " active" : ""}`}
-              onClick={() => dispatch({ type: "SET_VIEW", view: n.id })}
+              className={`nav-item nav-desktop-only${activeView === n.id ? " active" : ""}`}
+              onClick={() => {
+                dispatch({ type: "SET_VIEW", view: n.id });
+                setShowMobileNavMenu(false);
+              }}
             >
               <span className="nav-icon">
                 <NavIcon name={n.icon} />
@@ -354,7 +383,50 @@ export default function App() {
               </span>
             </button>
           ))}
+          {MOBILE_PRIMARY_NAV.map((n) => (
+            <button
+              key={`m-${n.id}`}
+              className={`nav-item nav-mobile-only${activeView === n.id ? " active" : ""}`}
+              onClick={() => {
+                dispatch({ type: "SET_VIEW", view: n.id });
+                setShowMobileNavMenu(false);
+              }}
+            >
+              <span className="nav-icon">
+                <NavIcon name={n.icon} />
+              </span>
+              <span className="nav-label nav-label-mobile">{n.mobileLabel}</span>
+            </button>
+          ))}
+          <button
+            className={`nav-item nav-item-more nav-mobile-only${showMobileNavMenu ? " active" : ""}`}
+            onClick={() => setShowMobileNavMenu((v) => !v)}
+          >
+            <span className="nav-icon">
+              <NavIcon name="menu" />
+            </span>
+            <span className="nav-label nav-label-mobile">More</span>
+          </button>
         </nav>
+        {showMobileNavMenu && (
+          <div className="mobile-more-menu" ref={mobileMenuRef}>
+            {MOBILE_MORE_NAV.map((n) => (
+              <button
+                key={`more-${n.id}`}
+                className={`mobile-more-item${activeView === n.id ? " active" : ""}`}
+                onClick={() => {
+                  dispatch({ type: "SET_VIEW", view: n.id });
+                  setShowMobileNavMenu(false);
+                }}
+              >
+                <span className="nav-icon">
+                  <NavIcon name={n.icon} />
+                </span>
+                <span>{n.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </aside>
 
       {/* ── Main ──────────────────────────────── */}
