@@ -21,6 +21,11 @@ export const fmt = (n, dec = 0) => Number(n).toFixed(dec);
  * @returns {import('../types').AggregatedPlayerRow[]}
  */
 export function aggregatePlayerStats(matches) {
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   const map = {};
   matches.forEach((m) => {
     m.playerStats.forEach((ps) => {
@@ -36,12 +41,15 @@ export function aggregatePlayerStats(matches) {
     player,
     agents: [...agents],
     matches: rows.length,
-    acs:        avg(rows.map((r) => r.acs)),
-    kd:         avg(rows.map((r) => r.kd)),
-    adr:        avg(rows.map((r) => r.adr)),
-    kast:       avg(rows.map((r) => r.kast)),
-    fkRate:     avg(rows.map((r) => r.fkRate)),
-    clutchRate: avg(rows.map((r) => r.clutchRate)),
+    kills:      avg(rows.map((r) => num(r.kills))),
+    deaths:     avg(rows.map((r) => num(r.deaths))),
+    assists:    avg(rows.map((r) => num(r.assists))),
+    acs:        avg(rows.map((r) => num(r.acs))),
+    kd:         avg(rows.map((r) => num(r.kd))),
+    adr:        avg(rows.map((r) => num(r.adr))),
+    kast:       avg(rows.map((r) => num(r.kast))),
+    fkRate:     avg(rows.map((r) => num(r.fkRate))),
+    clutchRate: avg(rows.map((r) => num(r.clutchRate))),
   }));
 }
 

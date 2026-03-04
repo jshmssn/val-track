@@ -251,8 +251,31 @@ function createMatch(): void
         ]);
     }
 
-    // Return the newly created match in full
-    getMatch($matchId);
+    // Return created match; avoid hard-failing with 404 if immediate lookup fails.
+    $created = findMatchById($db, $matchId);
+    if ($created) {
+        $created['playerStats'] = getPlayerStatsForMatch($db, $matchId);
+        $created['teamMetrics'] = getTeamMetricsForMatch($db, $matchId);
+        sendSuccess($created, 201);
+    }
+
+    // Fallback response for edge environments where immediate joined lookup may fail.
+    sendSuccess([
+        'id'         => $matchId,
+        'team_id'    => $teamId,
+        'date'       => $body['date'],
+        'type'       => $body['type'],
+        'result'     => $body['result'],
+        'score'      => "{$scoreUs}-{$scoreThem}",
+        'map'        => $body['map'],
+        'opponent'   => $body['opponent'] ?? null,
+        'tournament' => $body['tournament'] ?? null,
+        'stage'      => $body['stage'] ?? null,
+        'vod_url'    => $body['vod_url'] ?? null,
+        'notes'      => $body['notes'] ?? null,
+        'playerStats'=> [],
+        'teamMetrics'=> null,
+    ], 201);
 }
 
 // ── PUT update match ─────────────────────────────────────────
@@ -262,9 +285,10 @@ function updateMatch(string $id): void
     $body = getJsonBody();
 
     // Check exists
-    $check = $db->prepare("SELECT id FROM matches WHERE id = ?");
+    $check = $db->prepare("SELECT id, team_id FROM matches WHERE id = ?");
     $check->execute([$id]);
-    if (!$check->fetch()) sendError('Match not found', 404);
+    $existing = $check->fetch();
+    if (!$existing) sendError('Match not found', 404);
 
     // Build dynamic SET clause from provided fields
     $allowed = [
@@ -286,6 +310,20 @@ function updateMatch(string $id): void
         }
     }
 
+    // Handle map update by resolving map name -> map_id.
+    if (isset($body['map'])) {
+        $mapName = trim((string)$body['map']);
+        if ($mapName === '') sendError('map cannot be empty', 422);
+
+        $mapStmt = $db->prepare("SELECT id FROM maps WHERE name = ?");
+        $mapStmt->execute([$mapName]);
+        $mapRow = $mapStmt->fetch();
+        if (!$mapRow) sendError('Unknown map: ' . $mapName, 422);
+
+        $sets[] = 'map_id = ?';
+        $params[] = $mapRow['id'];
+    }
+
     // Handle score update
     if (!empty($body['score'])) {
         $parts = explode('-', $body['score']);
@@ -293,6 +331,31 @@ function updateMatch(string $id): void
         $params[] = (int)($parts[0] ?? 0);
         $sets[]   = 'score_them = ?';
         $params[] = (int)($parts[1] ?? 0);
+    }
+
+    // Handle opponent update (resolve existing or auto-create).
+    if (array_key_exists('opponent', $body)) {
+        $name = trim((string)($body['opponent'] ?? ''));
+
+        if ($name === '') {
+            $sets[] = 'opponent_id = ?';
+            $params[] = null;
+        } else {
+            $opStmt = $db->prepare("SELECT id FROM opponents WHERE team_id = ? AND name = ?");
+            $opStmt->execute([$existing['team_id'], $name]);
+            $opRow = $opStmt->fetch();
+
+            if ($opRow) {
+                $opponentId = $opRow['id'];
+            } else {
+                $opponentId = uuid();
+                $db->prepare("INSERT INTO opponents (id, team_id, name) VALUES (?, ?, ?)")
+                    ->execute([$opponentId, $existing['team_id'], $name]);
+            }
+
+            $sets[] = 'opponent_id = ?';
+            $params[] = $opponentId;
+        }
     }
 
     if (!empty($sets)) {

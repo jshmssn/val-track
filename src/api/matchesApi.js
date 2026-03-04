@@ -202,3 +202,42 @@ export const notesApi = {
       { method: "DELETE" },
     ),
 };
+
+export const compositionApi = {
+  list: async () =>
+    request(`${BASE}/api/compositions.php?team_id=${TEAM_ID}`),
+  createComposition: async ({ name, notes = "", agents = [] }) =>
+    request(`${BASE}/api/compositions.php`, {
+      method: "POST",
+      body: JSON.stringify({
+        entity: "composition",
+        team_id: TEAM_ID,
+        name,
+        notes,
+        agents,
+      }),
+    }),
+  updateComposition: async (id, payload) =>
+    request(`${BASE}/api/compositions.php?composition_id=${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteComposition: async (id) =>
+    request(`${BASE}/api/compositions.php?composition_id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  addGame: async (payload) =>
+    request(`${BASE}/api/compositions.php`, {
+      method: "POST",
+      body: JSON.stringify({ entity: "game", ...payload }),
+    }),
+  updateGame: async (id, payload) =>
+    request(`${BASE}/api/compositions.php?result_id=${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteGame: async (id) =>
+    request(`${BASE}/api/compositions.php?result_id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+};

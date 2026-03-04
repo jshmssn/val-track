@@ -10,6 +10,8 @@ import { PlayerCard } from "./components/PlayerCard";
 import { StatsTable } from "./components/StatsTable";
 import { MapStatsModule } from "./components/MapStatsModule";
 import { AgentMapStatsModule } from "./components/AgentMapStatsModule";
+import { TeamCompositionTracker } from "./components/TeamCompositionTracker";
+import { PlayerFormTracker } from "./components/PlayerFormTracker";
 import { AdminReferenceModule } from "./components/AdminReferenceModule";
 import { MatchForm } from "./components/MatchForm";
 import { MatchRow } from "./components/MatchRow";
@@ -48,6 +50,8 @@ const NAV = [
   { id: "players", label: "Players", mobileLabel: "Players", icon: "players" },
   { id: "mapStats", label: "Map Stats", mobileLabel: "Maps", icon: "maps" },
   { id: "agentMap", label: "Agent Map", mobileLabel: "Agents", icon: "agents" },
+  { id: "teamComp", label: "Team Comp", mobileLabel: "Comp", icon: "comp" },
+  { id: "formTracker", label: "Player Tracker", mobileLabel: "Player Tracker", icon: "form" },
   { id: "stats", label: "Stats", mobileLabel: "Stats", icon: "stats" },
   { id: "admin", label: "Admin", mobileLabel: "Admin", icon: "admin" },
 ];
@@ -58,6 +62,8 @@ const PAGE_TITLES = {
   players: "Player Breakdown",
   mapStats: "Map Stats",
   agentMap: "Agent & Map Stats",
+  teamComp: "Team Composition Tracker",
+  formTracker: "Player Form",
   stats: "Stats Table",
   admin: "Admin",
 };
@@ -113,6 +119,15 @@ function NavIcon({ name }) {
           <path d="M9.4 12.2l1.9 1.9 3.6-3.8" />
         </svg>
       );
+    case "comp":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="8" height="6" rx="1.5" />
+          <rect x="13" y="5" width="8" height="6" rx="1.5" />
+          <rect x="8" y="14" width="8" height="6" rx="1.5" />
+          <path d="M11 8h2M7 17h10" />
+        </svg>
+      );
     case "stats":
       return (
         <svg {...common}>
@@ -124,6 +139,13 @@ function NavIcon({ name }) {
         <svg {...common}>
           <path d="M12 3l8 3v6c0 5-3.2 8-8 9-4.8-1-8-4-8-9V6l8-3z" />
           <path d="M12 8v8M8 12h8" />
+        </svg>
+      );
+    case "form":
+      return (
+        <svg {...common}>
+          <polyline points="3,17 8,11 13,14 21,6" />
+          <polyline points="14,6 21,6 21,13" />
         </svg>
       );
     default:
@@ -508,7 +530,13 @@ export default function App() {
                       <MatchRow
                         key={m.id}
                         match={m}
-                        onDelete={(id) => requestDeleteMatch(id, m.opponent || "this match")}
+                        mapOptions={refData.mapNames}
+                        onUpdate={(payload) =>
+                          dispatch({ type: "UPDATE_MATCH", payload })
+                        }
+                        onDelete={(id) =>
+                          dispatch({ type: "DELETE_MATCH", id })
+                        }
                       />
                     ))}
                   {filtered.length === 0 && (
@@ -533,7 +561,13 @@ export default function App() {
                       <MatchRow
                         key={m.id}
                         match={m}
-                        onDelete={(id) => requestDeleteMatch(id, m.opponent || "this match")}
+                        mapOptions={refData.mapNames}
+                        onUpdate={(payload) =>
+                          dispatch({ type: "UPDATE_MATCH", payload })
+                        }
+                        onDelete={(id) =>
+                          dispatch({ type: "DELETE_MATCH", id })
+                        }
                       />
                     ))}
                   {filtered.length === 0 && (
@@ -628,6 +662,31 @@ export default function App() {
                   mapNames={refData.mapNames}
                   agentNames={refData.agentNames}
                 />
+              </>
+            )}
+            {activeView === "teamComp" && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Team Composition Tracker</span>
+                  <span className="section-sub">
+                    Create compositions, pick agents, and track win/loss logs
+                  </span>
+                </div>
+                <TeamCompositionTracker
+                  agentNames={refData.agentNames}
+                  matches={matches}
+                />
+              </>
+            )}
+            {activeView === "formTracker" && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Player Form</span>
+                  <span className="section-sub">
+                    Live trend tracking — who's hot, who's in a slump
+                  </span>
+                </div>
+                <PlayerFormTracker matches={filtered} />
               </>
             )}
             {activeView === "stats" && (

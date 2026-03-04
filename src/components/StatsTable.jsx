@@ -6,6 +6,9 @@ const COLS = [
   { key:'matches', label:'GP',      numeric:true,  format:v=>v },
   { key:'acs',     label:'ACS',     numeric:true,  format:v=>fmt(v) },
   { key:'kd',      label:'K/D',     numeric:true,  format:v=>fmt(v,2) },
+  { key:'kills',   label:'K',       numeric:true,  format:v=>Math.round(v) },
+  { key:'deaths',  label:'D',       numeric:true,  format:v=>Math.round(v) },
+  { key:'assists', label:'A',       numeric:true,  format:v=>Math.round(v) },
 ];
 
 export function StatsTable({ matches }) {
