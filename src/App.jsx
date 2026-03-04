@@ -4,6 +4,7 @@ import { useReferenceData } from "./hooks/useReferenceData";
 import { useFilters } from "./hooks/useFilters";
 import { pct } from "./utils/statsHelpers";
 import { notesApi } from "./api/matchesApi";
+import { authApi } from "./api/authApi";
 
 import { PerformanceSummary } from "./components/PerformanceSummary";
 import { PlayerCard } from "./components/PlayerCard";
@@ -19,6 +20,10 @@ import { AIUploadModal } from "./components/AIUploadModal";
 import { AlertModal } from "./components/AlertModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { PlayerNoteModal } from "./components/PlayerNoteModal";
+import { AuthScreen } from "./components/AuthScreen";
+import { SuperAdminModule } from "./components/SuperAdminModule";
+import { LandingPage } from "./components/LandingPage";
+import { SettingsModule } from "./components/SettingsModule";
 function makePlayerNoteKey(matchId, playerId) {
   return `${matchId || ""}::${playerId || ""}`;
 }
@@ -53,15 +58,11 @@ const NAV = [
   { id: "teamComp", label: "Team Comp", mobileLabel: "Comp", icon: "comp" },
   { id: "formTracker", label: "Player Tracker", mobileLabel: "Player Tracker", icon: "form" },
   { id: "stats", label: "Stats", mobileLabel: "Stats", icon: "stats" },
-  { id: "admin", label: "Admin", mobileLabel: "Admin", icon: "admin" },
+  { id: "settings", label: "Settings", mobileLabel: "Settings", icon: "admin" },
+  { id: "admin", label: "Control Tower", mobileLabel: "Control", icon: "admin" },
+  { id: "superadmin", label: "Superadmin", mobileLabel: "Superadmin", icon: "admin" },
 ];
 const MOBILE_PRIMARY_NAV_IDS = ["dashboard", "matches", "players", "stats"];
-const MOBILE_PRIMARY_NAV = NAV.filter((n) =>
-  MOBILE_PRIMARY_NAV_IDS.includes(n.id),
-);
-const MOBILE_MORE_NAV = NAV.filter(
-  (n) => !MOBILE_PRIMARY_NAV_IDS.includes(n.id),
-);
 
 const PAGE_TITLES = {
   dashboard: "Overview",
@@ -72,8 +73,39 @@ const PAGE_TITLES = {
   teamComp: "Team Composition Tracker",
   formTracker: "Player Form",
   stats: "Stats Table",
-  admin: "Admin",
+  settings: "Settings",
+  admin: "Control Tower",
+  superadmin: "Superadmin",
 };
+
+function getAllowedViews(user) {
+  if (!user) return ["dashboard"];
+
+  if (user.is_superadmin) {
+    if (!user.team_id) return ["superadmin", "admin", "settings"];
+    return NAV.map((n) => n.id);
+  }
+
+  const role = (user.role || "coach").toLowerCase();
+  if (role === "player") return ["dashboard", "matches", "players", "settings"];
+  if (role === "coach" || role === "analyst") {
+    return [
+      "dashboard",
+      "matches",
+      "players",
+      "mapStats",
+      "agentMap",
+      "teamComp",
+      "formTracker",
+      "stats",
+      "settings",
+    ];
+  }
+  if (role === "admin") {
+    return ["dashboard", "matches", "players", "mapStats", "agentMap", "teamComp", "formTracker", "stats", "settings"];
+  }
+  return ["dashboard", "matches", "players", "stats", "settings"];
+}
 function NavIcon({ name }) {
   const common = {
     width: 18,
@@ -209,8 +241,19 @@ function ActionIcon({ name }) {
   }
 }
 export default function App() {
-  const { state, dispatch } = useAppState();
+  const { state, dispatch, reloadMatches } = useAppState();
   const refData = useReferenceData();
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authPending, setAuthPending] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [teamSetupForm, setTeamSetupForm] = useState({ team_name: "", team_tag: "", region: "" });
+  const [teamSetupSaving, setTeamSetupSaving] = useState(false);
+  const [teamSetupError, setTeamSetupError] = useState("");
+  const resetToken = new URLSearchParams(window.location.search).get("reset_token") || "";
+  const [showAuthScreen, setShowAuthScreen] = useState(Boolean(resetToken));
+  const [authMode, setAuthMode] = useState(resetToken ? "reset" : "login");
   const [showForm, setShowForm] = useState(false);
   const [showDrop, setShowDrop] = useState(false);
   const [aiMatchType, setAiMatchType] = useState(null);
@@ -232,6 +275,38 @@ export default function App() {
   const { matches, filters, activeView, loading, error, apiError } = state;
   const showAlert = (message, title = "Notice") =>
     setAlertState({ open: true, title, message: String(message || "") });
+  const allowedViews = getAllowedViews(authUser);
+  const navItems = NAV.filter((n) => allowedViews.includes(n.id));
+  const requiresTeamSetup = Boolean(authUser && !authUser.is_superadmin && !authUser.team_id);
+  const mobilePrimaryNav = navItems.filter((n) => MOBILE_PRIMARY_NAV_IDS.includes(n.id));
+  const mobileMoreNav = navItems.filter((n) => !MOBILE_PRIMARY_NAV_IDS.includes(n.id));
+  const canAddMatch = authUser?.is_superadmin || ["coach", "analyst", "admin"].includes((authUser?.role || "").toLowerCase());
+
+  useEffect(() => {
+    let cancelled = false;
+    authApi
+      .me()
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.authenticated && res?.user) {
+          setAuthUser(res.user);
+          if (res.user.team_id || (res.user.is_superadmin && res.user.team_id)) {
+            reloadMatches();
+          }
+        } else {
+          setAuthUser(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAuthUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadMatches]);
 
   useEffect(() => {
     if (!saveToast) return;
@@ -261,6 +336,7 @@ export default function App() {
   }, [showMobileNavMenu]);
 
   useEffect(() => {
+    if (!authUser || (!authUser.team_id && !authUser.is_superadmin)) return;
     let cancelled = false;
     notesApi
       .getAll()
@@ -279,7 +355,13 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!allowedViews.includes(activeView) && allowedViews.length > 0) {
+      dispatch({ type: "SET_VIEW", view: allowedViews[0] });
+    }
+  }, [activeView, allowedViews, dispatch]);
 
   const filtered = useFilters(matches, filters);
   const players = getPlayers(matches);
@@ -356,6 +438,125 @@ export default function App() {
     }
   };
 
+  const clearAuthFeedback = () => {
+    setAuthError("");
+    setAuthMessage("");
+  };
+
+  const handleLogin = async (payload) => {
+    clearAuthFeedback();
+    setAuthPending(true);
+    try {
+      const res = await authApi.login(payload);
+      setAuthUser(res.user);
+      setShowAuthScreen(false);
+      if (res.user.team_id || (res.user.is_superadmin && res.user.team_id)) {
+        await reloadMatches();
+      }
+    } catch (err) {
+      setAuthError(err.message || "Login failed.");
+    } finally {
+      setAuthPending(false);
+    }
+  };
+
+  const handleForgot = async (email) => {
+    clearAuthFeedback();
+    setAuthPending(true);
+    try {
+      const res = await authApi.forgotPassword(email);
+      setAuthMessage(res?.message || "If that email exists, a reset link has been sent.");
+    } catch (err) {
+      setAuthError(err.message || "Failed to send reset link.");
+    } finally {
+      setAuthPending(false);
+    }
+  };
+
+  const handleReset = async ({ token, password }) => {
+    clearAuthFeedback();
+    setAuthPending(true);
+    try {
+      const res = await authApi.resetPassword({ token, password });
+      setAuthMessage(res?.message || "Password has been reset.");
+      setAuthMode("login");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("reset_token");
+      window.history.replaceState({}, "", url.toString());
+    } catch (err) {
+      setAuthError(err.message || "Failed to reset password.");
+    } finally {
+      setAuthPending(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch (_) {
+      // noop
+    }
+    setAuthUser(null);
+    setTeamSetupForm({ team_name: "", team_tag: "", region: "" });
+    setTeamSetupError("");
+    clearAuthFeedback();
+  };
+
+  const handleTeamSetupSubmit = async (e) => {
+    e.preventDefault();
+    setTeamSetupError("");
+    setTeamSetupSaving(true);
+    try {
+      const res = await authApi.setupTeam(teamSetupForm);
+      if (res?.user) {
+        setAuthUser(res.user);
+      }
+      setTeamSetupForm({ team_name: "", team_tag: "", region: "" });
+      await reloadMatches();
+    } catch (err) {
+      setTeamSetupError(err.message || "Failed to create team.");
+    } finally {
+      setTeamSetupSaving(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-tri" />
+        <div className="loading-text">Checking session...</div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    if (!showAuthScreen) {
+      return (
+        <LandingPage
+          onLogin={() => {
+            clearAuthFeedback();
+            setAuthMode("login");
+            setShowAuthScreen(true);
+          }}
+        />
+      );
+    }
+
+    return (
+      <AuthScreen
+        initialMode={authMode}
+        resetToken={resetToken}
+        onBack={!resetToken ? () => setShowAuthScreen(false) : undefined}
+        loading={authPending}
+        error={authError}
+        message={authMessage}
+        onLogin={handleLogin}
+        onForgot={handleForgot}
+        onReset={handleReset}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       {/* ── Sidebar ─────────────────────────────── */}
@@ -365,7 +566,7 @@ export default function App() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.map((n) => (
+          {navItems.map((n) => (
             <button
               key={n.id}
               className={`nav-item nav-desktop-only${activeView === n.id ? " active" : ""}`}
@@ -383,7 +584,7 @@ export default function App() {
               </span>
             </button>
           ))}
-          {MOBILE_PRIMARY_NAV.map((n) => (
+          {mobilePrimaryNav.map((n) => (
             <button
               key={`m-${n.id}`}
               className={`nav-item nav-mobile-only${activeView === n.id ? " active" : ""}`}
@@ -410,7 +611,7 @@ export default function App() {
         </nav>
         {showMobileNavMenu && (
           <div className="mobile-more-menu" ref={mobileMenuRef}>
-            {MOBILE_MORE_NAV.map((n) => (
+            {mobileMoreNav.map((n) => (
               <button
                 key={`more-${n.id}`}
                 className={`mobile-more-item${activeView === n.id ? " active" : ""}`}
@@ -436,11 +637,18 @@ export default function App() {
           <div className="topbar-left">
             <div className="topbar-title">{PAGE_TITLES[activeView]}</div>
             <div className="topbar-sub">
-              {loading ? "loading..." : `${filtered.length} matches in view`}
+              {activeView === "superadmin"
+                ? "User and team management"
+                : loading
+                  ? "loading..."
+                  : `${filtered.length} matches in view`}
             </div>
           </div>
           <div className="topbar-right">
-            {total > 0 && !loading && (
+            <button className="logout-btn" onClick={handleLogout}>
+              Logout
+            </button>
+            {activeView !== "superadmin" && total > 0 && !loading && (
               <div className="wl-badge">
                 <span className="wl-win">{wins}W</span>
                 <span className="wl-sep">·</span>
@@ -449,6 +657,7 @@ export default function App() {
                 <span className="wl-pct">{pct(wins, total)}%</span>
               </div>
             )}
+            {canAddMatch && activeView !== "superadmin" ? (
             <div ref={dropRef} style={{ position: "relative" }}>
               <button
                 className="add-btn"
@@ -501,10 +710,12 @@ export default function App() {
                 </div>
               )}
             </div>
+            ) : null}
           </div>
         </header>
 
         {/* Filter bar */}
+        {activeView !== "superadmin" && (
         <div className="filter-bar">
           <FilterSel
             label="Map"
@@ -549,9 +760,10 @@ export default function App() {
             Reset
           </button>
         </div>
+        )}
 
         {/* Error */}
-        {(error || apiError) && (
+        {(error || apiError) && !(activeView === "superadmin" && authUser?.is_superadmin && !authUser?.team_id) && (
           <div className="error-banner">⚠ {error || apiError}</div>
         )}
 
@@ -770,20 +982,37 @@ export default function App() {
                 <StatsTable matches={filtered} />
               </>
             )}
+            {activeView === "settings" && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Settings</span>
+                  <span className="section-sub">Manage your account</span>
+                </div>
+                <SettingsModule />
+              </>
+            )}
             {activeView === "admin" && (
               <>
                 <div className="section-header" style={{ marginTop: 4 }}>
-                  <span className="section-title">Admin</span>
+                  <span className="section-title">Control Tower</span>
                   <span className="section-sub">
-                    Manage active maps and agents
+                    Superadmin control for maps and agents
                   </span>
                 </div>
                 <AdminReferenceModule
                   maps={refData.maps}
                   agents={refData.agents}
-                  team={refData.team}
                   onRefresh={refData.refresh}
                 />
+              </>
+            )}
+            {activeView === "superadmin" && authUser?.is_superadmin && (
+              <>
+                <div className="section-header" style={{ marginTop: 4 }}>
+                  <span className="section-title">Superadmin</span>
+                  <span className="section-sub">Global user and team control</span>
+                </div>
+                <SuperAdminModule />
               </>
             )}
           </main>
@@ -845,6 +1074,40 @@ export default function App() {
         onSave={savePlayerNote}
         onDelete={deletePlayerNote}
       />
+      {requiresTeamSetup && (
+        <div className="team-setup-overlay" role="dialog" aria-modal="true">
+          <div className="team-setup-card">
+            <h2 className="team-setup-title">Complete Team Setup</h2>
+            <p className="team-setup-sub">
+              Your account has no team yet. Create your team to continue.
+            </p>
+            {teamSetupError ? <div className="adminref-notice err">{teamSetupError}</div> : null}
+            <form className="auth-form" onSubmit={handleTeamSetupSubmit}>
+              <label>Team Name</label>
+              <input
+                value={teamSetupForm.team_name}
+                onChange={(e) => setTeamSetupForm((p) => ({ ...p, team_name: e.target.value }))}
+                required
+              />
+              <label>Team Tag (optional)</label>
+              <input
+                value={teamSetupForm.team_tag}
+                onChange={(e) => setTeamSetupForm((p) => ({ ...p, team_tag: e.target.value }))}
+                maxLength={10}
+              />
+              <label>Region (optional)</label>
+              <input
+                value={teamSetupForm.region}
+                onChange={(e) => setTeamSetupForm((p) => ({ ...p, region: e.target.value }))}
+                maxLength={50}
+              />
+              <button className="auth-btn primary" type="submit" disabled={teamSetupSaving}>
+                {teamSetupSaving ? "Creating Team..." : "Create Team"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

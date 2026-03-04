@@ -15,8 +15,6 @@ const BASE = (() => {
   const clean = raw.trim().replace(/\/+$/, "");
   return clean || "/backend";
 })();
-export const TEAM_ID =
-  process.env.REACT_APP_TEAM_ID || "aaaaaaaa-0000-0000-0000-000000000001";
 
 async function request(url, options = {}) {
   const method = (options.method || "GET").toUpperCase();
@@ -31,6 +29,7 @@ async function request(url, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers,
+    credentials: "include",
   });
   const raw = await res.text();
   let json = null;
@@ -53,7 +52,7 @@ async function request(url, options = {}) {
 
 export const matchesApi = {
   getAll: async (filters = {}) => {
-    const params = new URLSearchParams({ team_id: TEAM_ID });
+    const params = new URLSearchParams();
     if (filters.map && filters.map !== "All") params.set("map", filters.map);
     if (filters.type && filters.type !== "All")
       params.set("type", filters.type);
@@ -65,7 +64,7 @@ export const matchesApi = {
   create: async (match) =>
     request(`${BASE}/api/matches.php`, {
       method: "POST",
-      body: JSON.stringify({ ...match, team_id: TEAM_ID }),
+      body: JSON.stringify(match),
     }),
   update: async (match) =>
     request(`${BASE}/api/matches.php?id=${match.id}`, {
@@ -77,12 +76,12 @@ export const matchesApi = {
 };
 
 export const playersApi = {
-  getAll: async () => request(`${BASE}/api/players.php?team_id=${TEAM_ID}`),
+  getAll: async () => request(`${BASE}/api/players.php`),
   getById: async (id) => request(`${BASE}/api/players.php?id=${id}`),
   create: async (player) =>
     request(`${BASE}/api/players.php`, {
       method: "POST",
-      body: JSON.stringify({ ...player, team_id: TEAM_ID }),
+      body: JSON.stringify(player),
     }),
   update: async (player) =>
     request(`${BASE}/api/players.php?id=${player.id}`, {
@@ -93,13 +92,13 @@ export const playersApi = {
 
 export const statsApi = {
   mapWinrates: async () =>
-    request(`${BASE}/api/stats.php?type=map_winrates&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=map_winrates`),
   agentStats: async () =>
-    request(`${BASE}/api/stats.php?type=agent_stats&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=agent_stats`),
   teamEconomics: async () =>
-    request(`${BASE}/api/stats.php?type=team_economics&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=team_economics`),
   playerAverages: async () =>
-    request(`${BASE}/api/stats.php?type=player_averages&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/stats.php?type=player_averages`),
 };
 
 export const aiApi = {
@@ -126,6 +125,7 @@ export const aiApi = {
         res = await fetch(endpoint, {
           method: "POST",
           body: formData,
+          credentials: "include",
         });
       } catch (err) {
         return {
@@ -203,16 +203,16 @@ export const aiApi = {
 export const referenceApi = {
   maps: async () => request(`${BASE}/api/reference.php?type=maps`),
   agents: async () => request(`${BASE}/api/reference.php?type=agents`),
-  players: async () => request(`${BASE}/api/reference.php?type=players&team_id=${TEAM_ID}`),
+  players: async () => request(`${BASE}/api/reference.php?type=players`),
   teams: async () => request(`${BASE}/api/reference.php?type=teams`),
-  team: async () => request(`${BASE}/api/reference.php?type=team&team_id=${TEAM_ID}`),
+  team: async () => request(`${BASE}/api/reference.php?type=team`),
   updateTeamName: async (name) =>
-    request(`${BASE}/api/reference.php?type=team&team_id=${TEAM_ID}`, {
+    request(`${BASE}/api/reference.php?type=team`, {
       method: "PUT",
       body: JSON.stringify({ name }),
     }),
   opponents: async () =>
-    request(`${BASE}/api/reference.php?type=opponents&team_id=${TEAM_ID}`),
+    request(`${BASE}/api/reference.php?type=opponents`),
   addMap: async (name) =>
     request(`${BASE}/api/reference.php?type=maps`, {
       method: "POST",
@@ -234,13 +234,11 @@ export const referenceApi = {
 };
 
 export const notesApi = {
-  getAll: async () =>
-    request(`${BASE}/api/coaching_notes.php?team_id=${TEAM_ID}`),
+  getAll: async () => request(`${BASE}/api/coaching_notes.php`),
   upsert: async ({ matchId, playerId, body, title = null, tags = null }) =>
     request(`${BASE}/api/coaching_notes.php`, {
       method: "POST",
       body: JSON.stringify({
-        team_id: TEAM_ID,
         match_id: matchId,
         player_id: playerId,
         title,
@@ -250,20 +248,18 @@ export const notesApi = {
     }),
   removeByContext: async ({ matchId, playerId }) =>
     request(
-      `${BASE}/api/coaching_notes.php?team_id=${encodeURIComponent(TEAM_ID)}&match_id=${encodeURIComponent(matchId)}&player_id=${encodeURIComponent(playerId)}`,
+      `${BASE}/api/coaching_notes.php?match_id=${encodeURIComponent(matchId)}&player_id=${encodeURIComponent(playerId)}`,
       { method: "DELETE" },
     ),
 };
 
 export const compositionApi = {
-  list: async () =>
-    request(`${BASE}/api/compositions.php?team_id=${TEAM_ID}`),
+  list: async () => request(`${BASE}/api/compositions.php`),
   createComposition: async ({ name, notes = "", agents = [] }) =>
     request(`${BASE}/api/compositions.php`, {
       method: "POST",
       body: JSON.stringify({
         entity: "composition",
-        team_id: TEAM_ID,
         name,
         notes,
         agents,

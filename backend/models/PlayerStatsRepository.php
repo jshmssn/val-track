@@ -19,7 +19,7 @@ class PlayerStatsRepository
     // ── Fetch raw rows (mirrors "Data" sheet output) ─────────
 
     public function fetchRows(
-        int     $teamId,
+        string  $teamId,
         ?string $player    = null,
         ?string $type      = null,
         ?string $map       = null,
@@ -92,7 +92,7 @@ class PlayerStatsRepository
     // ── Per-player aggregated stats directly in SQL ──────────
 
     public function fetchPlayerAverages(
-        int     $teamId,
+        string  $teamId,
         ?string $type      = null,
         ?string $map       = null,
         ?string $agent     = null,
@@ -138,7 +138,7 @@ class PlayerStatsRepository
     // ── Per-player, per-map averages ─────────────────────────
 
     public function fetchPlayerMapAverages(
-        int     $teamId,
+        string  $teamId,
         ?string $player    = null,
         ?string $type      = null,
         ?string $dateStart = null,
@@ -176,7 +176,7 @@ class PlayerStatsRepository
     // ── Per-player, per-agent averages ───────────────────────
 
     public function fetchPlayerAgentAverages(
-        int     $teamId,
+        string  $teamId,
         ?string $player    = null,
         ?string $type      = null,
         ?string $dateStart = null,
@@ -215,7 +215,7 @@ class PlayerStatsRepository
     // ── Team-level per-map stats (Home sheet map table) ──────
 
     public function fetchTeamMapStats(
-        int     $teamId,
+        string  $teamId,
         ?string $type      = null,
         ?string $dateStart = null,
         ?string $dateEnd   = null
@@ -249,7 +249,7 @@ class PlayerStatsRepository
     // ── Team-level per-agent stats (Home sheet agent table) ──
 
     public function fetchTeamAgentStats(
-        int     $teamId,
+        string  $teamId,
         ?string $type      = null,
         ?string $dateStart = null,
         ?string $dateEnd   = null
@@ -347,7 +347,7 @@ class PlayerStatsRepository
         return $row ? (int)$row['id'] : null;
     }
 
-    public function resolvePlayerId(string $ign, int $teamId): ?int
+    public function resolvePlayerId(string $ign, string $teamId): ?int
     {
         $stmt = $this->db->prepare("SELECT id FROM players WHERE ign = ? AND team_id = ?");
         $stmt->execute([$ign, $teamId]);

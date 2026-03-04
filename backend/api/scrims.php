@@ -24,19 +24,17 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../models/ScrimsRepository.php';
 require_once __DIR__ . '/../services/AnalyticsCalculator.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? null;
 $id     = isset($_GET['id']) ? (int)$_GET['id'] : null;
-$teamId = isset($_GET['team_id']) ? (int)$_GET['team_id'] : null;
-
-if (!$teamId && $method === 'GET') {
-    sendError('team_id is required', 422);
-}
+$teamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? null);
 
 $repo = new ScrimsRepository();
 
@@ -155,19 +153,31 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $body   = getJsonBody();
-    $teamId = (int)requireParam($body, 'team_id');
+    $teamId = resolveScopedTeamId($authUser, $body['team_id'] ?? null);
 
     $insertId = $repo->insert(array_merge($body, ['team_id' => $teamId]));
     sendSuccess(['id' => $insertId], 201);
 }
 
 if ($method === 'PUT' && $id !== null) {
+    $scope = getDB()->prepare("SELECT team_id FROM scrims WHERE id = ? LIMIT 1");
+    $scope->execute([$id]);
+    $row = $scope->fetch();
+    if (!$row) sendError('Scrim not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $body = getJsonBody();
     $repo->update($id, $body);
     sendSuccess(['updated' => $id]);
 }
 
 if ($method === 'DELETE' && $id !== null) {
+    $scope = getDB()->prepare("SELECT team_id FROM scrims WHERE id = ? LIMIT 1");
+    $scope->execute([$id]);
+    $row = $scope->fetch();
+    if (!$row) sendError('Scrim not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $repo->delete($id);
     sendSuccess(['deleted' => $id]);
 }

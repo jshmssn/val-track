@@ -1,0 +1,6 @@
+Options -Indexes
+
+# Reuse backend custom error page for project-level 403/404
+# If folder name changes from "val-track", update these paths.
+ErrorDocument 403 /val-track/backend/error.php
+ErrorDocument 404 /val-track/backend/error.php

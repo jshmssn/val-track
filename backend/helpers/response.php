@@ -5,10 +5,40 @@
 
 declare(strict_types=1);
 
+function getAllowedCorsOrigins(): array
+{
+    $raw = '';
+    if (function_exists('vtEnv')) {
+        $raw = (string)(vtEnv('CORS_ALLOWED_ORIGINS', '') ?? '');
+    } else {
+        $raw = (string)(getenv('CORS_ALLOWED_ORIGINS') ?: '');
+    }
+
+    $parts = array_filter(array_map('trim', explode(',', $raw)));
+    return array_values($parts);
+}
+
+function setCorsHeadersForRequest(): void
+{
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($origin === '') return;
+
+    $allowed = getAllowedCorsOrigins();
+
+    if (empty($allowed) || in_array('*', $allowed, true) || in_array($origin, $allowed, true)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Vary: Origin');
+        header('Access-Control-Allow-Credentials: true');
+    }
+}
+
 function setCorsHeaders(): void
 {
     header('Content-Type: application/json; charset=utf-8');
-    // CORS is handled by .htaccess — do NOT set here
+    setCorsHeadersForRequest();
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+    header('Access-Control-Max-Age: 86400');
 
     if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         http_response_code(204);
@@ -22,7 +52,7 @@ function sendSuccess($data, int $code = 200): void
         ob_end_clean();
     }
     header('Content-Type: application/json; charset=utf-8');
-    // CORS handled by .htaccess
+    setCorsHeadersForRequest();
     http_response_code($code);
     echo json_encode(['success' => true, 'data' => $data], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
@@ -34,7 +64,7 @@ function sendError(string $message, int $code = 400, ?array $details = null): vo
         ob_end_clean();
     }
     header('Content-Type: application/json; charset=utf-8');
-    // CORS handled by .htaccess
+    setCorsHeadersForRequest();
     http_response_code($code);
     $body = ['success' => false, 'error' => $message];
     if ($details) $body['details'] = $details;

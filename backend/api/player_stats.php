@@ -27,18 +27,20 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../models/PlayerStatsRepository.php';
 require_once __DIR__ . '/../services/AnalyticsCalculator.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? null;
 $id     = isset($_GET['id']) ? (int)$_GET['id'] : null;
-$teamId = isset($_GET['team_id']) ? (int)$_GET['team_id'] : null;
-
-if (!$teamId && !in_array($action, ['create'], true) && $method === 'GET') {
-    sendError('team_id is required', 422);
+$requiresTeamScope = !($method === 'GET' && $action === 'acs_calculator');
+$teamId = null;
+if ($requiresTeamScope) {
+    $teamId = resolveScopedTeamId($authUser, $_GET['team_id'] ?? null);
 }
 
 $repo = new PlayerStatsRepository();
@@ -199,7 +201,7 @@ if ($method === 'POST') {
     $body = getJsonBody();
 
     // Resolve IDs
-    $teamId   = (int)requireParam($body, 'team_id');
+    $teamId   = resolveScopedTeamId($authUser, $body['team_id'] ?? null);
     $mapId    = $repo->resolveMapId(requireParam($body, 'map'));
     $agentId  = $repo->resolveAgentId(requireParam($body, 'agent'));
     $playerId = $repo->resolvePlayerId(requireParam($body, 'player'), $teamId);
@@ -231,6 +233,12 @@ if ($method === 'POST') {
 }
 
 if ($method === 'PUT' && $id !== null) {
+    $scope = getDB()->prepare("SELECT team_id FROM player_stats WHERE id = ? LIMIT 1");
+    $scope->execute([$id]);
+    $row = $scope->fetch();
+    if (!$row) sendError('Player stat row not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $body = getJsonBody();
     if (isset($body['map']))   $body['map_id']   = $repo->resolveMapId($body['map']);
     if (isset($body['agent'])) $body['agent_id'] = $repo->resolveAgentId($body['agent']);
@@ -239,6 +247,12 @@ if ($method === 'PUT' && $id !== null) {
 }
 
 if ($method === 'DELETE' && $id !== null) {
+    $scope = getDB()->prepare("SELECT team_id FROM player_stats WHERE id = ? LIMIT 1");
+    $scope->execute([$id]);
+    $row = $scope->fetch();
+    if (!$row) sendError('Player stat row not found', 404);
+    assertTeamAccess($authUser, (string)$row['team_id']);
+
     $repo->delete($id);
     sendSuccess(['deleted' => $id]);
 }

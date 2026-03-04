@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { TEAM_ID, referenceApi } from '../api/matchesApi';
+import { referenceApi } from '../api/matchesApi';
 
 export function useReferenceData() {
   const [agents, setAgents] = useState([]);
@@ -29,14 +29,9 @@ export function useReferenceData() {
       if (playersRes.status === 'fulfilled') setPlayers(playersRes.value || []);
       else setPlayers([]);
 
-      // Backward compatibility:
-      // - Prefer type=team when supported
-      // - Fallback to type=teams list and resolve by TEAM_ID
+      // Prefer type=team for the currently authenticated user's scoped team.
       if (teamRes.status === 'fulfilled') {
         setTeam(teamRes.value || null);
-      } else if (teamsRes.status === 'fulfilled') {
-        const teamFromList = (teamsRes.value || []).find((t) => t.id === TEAM_ID) || null;
-        setTeam(teamFromList);
       } else {
         setTeam(null);
       }

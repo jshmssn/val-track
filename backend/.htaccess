@@ -1,0 +1,9 @@
+Options -Indexes
+
+# Block directory browsing for /backend
+# (API endpoints under /backend/api remain accessible)
+
+# Custom reusable error page for forbidden / missing backend pages.
+# If your project folder name changes from "val-track", update this path.
+ErrorDocument 403 /val-track/backend/error.php
+ErrorDocument 404 /val-track/backend/error.php

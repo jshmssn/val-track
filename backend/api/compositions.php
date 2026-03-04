@@ -9,8 +9,10 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
+require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+$authUser = requireAuth();
 
 $db = getDB();
 ensureSchema($db);
@@ -22,8 +24,8 @@ $resultId = $_GET['result_id'] ?? null;
 
 switch ($method) {
     case 'GET':
-        if (!$teamId) sendError('team_id required', 422);
-        listCompositions($db, (string)$teamId);
+        $scopeTeamId = resolveScopedTeamId($authUser, $teamId);
+        listCompositions($db, (string)$scopeTeamId);
         break;
     case 'POST':
         createResource($db);
@@ -163,16 +165,16 @@ function listCompositions(PDO $db, string $teamId): void
 
 function createResource(PDO $db): void
 {
+    global $authUser;
     $body = getJsonBody();
     $entity = (string)($body['entity'] ?? '');
 
     if ($entity === 'composition') {
-        $teamId = trim((string)($body['team_id'] ?? ''));
+        $teamId = resolveScopedTeamId($authUser, $body['team_id'] ?? null);
         $name = trim((string)($body['name'] ?? ''));
         $agents = normalizeAgents($body['agents'] ?? []);
         $notes = isset($body['notes']) ? trim((string)$body['notes']) : null;
 
-        if ($teamId === '') sendError('team_id required', 422);
         if ($name === '') sendError('name required', 422);
 
         $id = uuid();
@@ -206,12 +208,14 @@ function createResource(PDO $db): void
         if ($matchId === '' && $playedAt === '') sendError('played_at required when match_id is not provided', 422);
         if ($matchId === '' && $result !== 'Win' && $result !== 'Loss') sendError('result must be Win or Loss', 422);
 
-        $exists = $db->prepare("SELECT id FROM team_compositions WHERE id = ?");
+        $exists = $db->prepare("SELECT id, team_id FROM team_compositions WHERE id = ?");
         $exists->execute([$compositionId]);
-        if (!$exists->fetch()) sendError('Composition not found', 404);
+        $comp = $exists->fetch();
+        if (!$comp) sendError('Composition not found', 404);
+        assertTeamAccess($authUser, (string)$comp['team_id']);
 
         if ($matchId !== '') {
-            $meta = fetchMatchMeta($db, $matchId);
+            $meta = fetchMatchMeta($db, $matchId, (string)$comp['team_id']);
             if (!$meta) sendError('Match not found', 404);
             $playedAt = (string)$meta['played_at'];
             $mapName = $meta['map_name'] ?? null;
@@ -248,9 +252,16 @@ function createResource(PDO $db): void
 
 function updateResource(PDO $db, ?string $compositionId, ?string $resultId): void
 {
+    global $authUser;
     $body = getJsonBody();
 
     if ($compositionId) {
+        $scope = $db->prepare("SELECT team_id FROM team_compositions WHERE id = ? LIMIT 1");
+        $scope->execute([$compositionId]);
+        $compRow = $scope->fetch();
+        if (!$compRow) sendError('Composition not found', 404);
+        assertTeamAccess($authUser, (string)$compRow['team_id']);
+
         $name = isset($body['name']) ? trim((string)$body['name']) : null;
         $agentsProvided = array_key_exists('agents', $body);
         $agents = $agentsProvided ? normalizeAgents($body['agents']) : null;
@@ -286,6 +297,18 @@ function updateResource(PDO $db, ?string $compositionId, ?string $resultId): voi
     }
 
     if ($resultId) {
+        $scope = $db->prepare("
+            SELECT c.team_id
+            FROM team_composition_games g
+            JOIN team_compositions c ON c.id = g.composition_id
+            WHERE g.id = ?
+            LIMIT 1
+        ");
+        $scope->execute([$resultId]);
+        $gameScope = $scope->fetch();
+        if (!$gameScope) sendError('Game record not found', 404);
+        assertTeamAccess($authUser, (string)$gameScope['team_id']);
+
         $sets = [];
         $params = [];
 
@@ -332,7 +355,7 @@ function updateResource(PDO $db, ?string $compositionId, ?string $resultId): voi
                 $sets[] = 'match_id = ?';
                 $params[] = null;
             } else {
-                $meta = fetchMatchMeta($db, $matchId);
+                $meta = fetchMatchMeta($db, $matchId, (string)$gameScope['team_id']);
                 if (!$meta) sendError('Match not found', 404);
                 $sets[] = 'match_id = ?';
                 $params[] = $matchId;
@@ -378,9 +401,9 @@ function normalizeAgents($raw): array
     return array_values(array_unique($out));
 }
 
-function fetchMatchMeta(PDO $db, string $matchId): ?array
+function fetchMatchMeta(PDO $db, string $matchId, ?string $teamId = null): ?array
 {
-    $stmt = $db->prepare("
+    $sql = "
         SELECT
             m.played_at,
             mp.name AS map_name,
@@ -391,16 +414,30 @@ function fetchMatchMeta(PDO $db, string $matchId): ?array
         JOIN maps mp ON m.map_id = mp.id
         LEFT JOIN opponents o ON m.opponent_id = o.id
         WHERE m.id = ?
-        LIMIT 1
-    ");
-    $stmt->execute([$matchId]);
+    ";
+    $params = [$matchId];
+    if ($teamId !== null && $teamId !== '') {
+        $sql .= " AND m.team_id = ?";
+        $params[] = $teamId;
+    }
+    $sql .= " LIMIT 1";
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
 function deleteResource(PDO $db, ?string $compositionId, ?string $resultId): void
 {
+    global $authUser;
     if ($compositionId) {
+        $scope = $db->prepare("SELECT team_id FROM team_compositions WHERE id = ? LIMIT 1");
+        $scope->execute([$compositionId]);
+        $compRow = $scope->fetch();
+        if (!$compRow) sendError('Composition not found', 404);
+        assertTeamAccess($authUser, (string)$compRow['team_id']);
+
         $stmt = $db->prepare("DELETE FROM team_compositions WHERE id = ?");
         $stmt->execute([$compositionId]);
         if ($stmt->rowCount() === 0) sendError('Composition not found', 404);
@@ -408,6 +445,18 @@ function deleteResource(PDO $db, ?string $compositionId, ?string $resultId): voi
     }
 
     if ($resultId) {
+        $scope = $db->prepare("
+            SELECT c.team_id
+            FROM team_composition_games g
+            JOIN team_compositions c ON c.id = g.composition_id
+            WHERE g.id = ?
+            LIMIT 1
+        ");
+        $scope->execute([$resultId]);
+        $gameScope = $scope->fetch();
+        if (!$gameScope) sendError('Game record not found', 404);
+        assertTeamAccess($authUser, (string)$gameScope['team_id']);
+
         $stmt = $db->prepare("DELETE FROM team_composition_games WHERE id = ?");
         $stmt->execute([$resultId]);
         if ($stmt->rowCount() === 0) sendError('Game record not found', 404);
