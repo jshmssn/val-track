@@ -3,6 +3,7 @@ import { useAppState } from "./hooks/useAppState";
 import { useReferenceData } from "./hooks/useReferenceData";
 import { useFilters } from "./hooks/useFilters";
 import { pct } from "./utils/statsHelpers";
+import { notesApi } from "./api/matchesApi";
 
 import { PerformanceSummary } from "./components/PerformanceSummary";
 import { PlayerCard } from "./components/PlayerCard";
@@ -13,6 +14,12 @@ import { AdminReferenceModule } from "./components/AdminReferenceModule";
 import { MatchForm } from "./components/MatchForm";
 import { MatchRow } from "./components/MatchRow";
 import { AIUploadModal } from "./components/AIUploadModal";
+import { AlertModal } from "./components/AlertModal";
+import { ConfirmModal } from "./components/ConfirmModal";
+import { PlayerNoteModal } from "./components/PlayerNoteModal";
+function makePlayerNoteKey(matchId, playerId) {
+  return `${matchId || ""}::${playerId || ""}`;
+}
 
 function getPlayers(matches) {
   const set = new Set();
@@ -124,14 +131,76 @@ function NavIcon({ name }) {
   }
 }
 
+
+function ActionIcon({ name }) {
+  const common = {
+    width: 20,
+    height: 20,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    xmlns: "http://www.w3.org/2000/svg",
+    stroke: "currentColor",
+    strokeWidth: 1.9,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": true,
+  };
+
+  switch (name) {
+    case "scrim":
+      return (
+        <svg {...common}>
+          <path d="M6 9h2v2H6zM16 9h2v2h-2zM8 8l2-2h4l2 2" />
+          <path d="M5 11l2 6h10l2-6V8a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v3z" />
+        </svg>
+      );
+    case "tournament":
+      return (
+        <svg {...common}>
+          <path d="M8 4h8v3a4 4 0 0 1-8 0V4z" />
+          <path d="M10 15h4M12 11v4M9 20h6" />
+          <path d="M8 5H6a2 2 0 0 0 0 4h1M16 5h2a2 2 0 0 1 0 4h-1" />
+        </svg>
+      );
+    case "manual":
+      return (
+        <svg {...common}>
+          <path d="M4 20h4l10-10-4-4L4 16v4z" />
+          <path d="M12 6l4 4" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
 export default function App() {
   const { state, dispatch } = useAppState();
   const refData = useReferenceData();
   const [showForm, setShowForm] = useState(false);
   const [showDrop, setShowDrop] = useState(false);
   const [aiMatchType, setAiMatchType] = useState(null);
+  const [saveToast, setSaveToast] = useState(null);
+  const [playerNotes, setPlayerNotes] = useState({});
+  const [playerNoteModal, setPlayerNoteModal] = useState({
+    open: false,
+    matchId: "",
+    playerId: "",
+    player: "",
+    body: "",
+  });
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [alertState, setAlertState] = useState({ open: false, title: "", message: "" });
+  const [confirmDelete, setConfirmDelete] = useState({ open: false, id: null, label: "" });
   const dropRef = useRef();
   const { matches, filters, activeView, loading, error, apiError } = state;
+  const showAlert = (message, title = "Notice") =>
+    setAlertState({ open: true, title, message: String(message || "") });
+
+  useEffect(() => {
+    if (!saveToast) return;
+    const t = setTimeout(() => setSaveToast(null), 2400);
+    return () => clearTimeout(t);
+  }, [saveToast]);
 
   useEffect(() => {
     if (!showDrop) return;
@@ -142,6 +211,27 @@ export default function App() {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [showDrop]);
+
+  useEffect(() => {
+    let cancelled = false;
+    notesApi
+      .getAll()
+      .then((rows) => {
+        if (cancelled) return;
+        const byKey = {};
+        (rows || []).forEach((n) => {
+          if (!n.match_id || !n.player_id) return;
+          byKey[makePlayerNoteKey(n.match_id, n.player_id)] = n.body || "";
+        });
+        setPlayerNotes(byKey);
+      })
+      .catch((err) => {
+        if (!cancelled) showAlert(err.message || "Failed to load player notes.", "Notes Error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useFilters(matches, filters);
   const players = getPlayers(matches);
@@ -169,6 +259,54 @@ export default function App() {
     ...new Set(matches.map((m) => m.opponent).filter(Boolean)),
   ];
   const PLR_OPTS = ["All", ...players];
+  const showSavedToast = () => setSaveToast({ id: Date.now(), text: "Match added successfully" });
+  const requestDeleteMatch = (id, label = "") =>
+    setConfirmDelete({ open: true, id, label });
+  const openPlayerNoteModal = ({ matchId, playerId, player, currentNote }) => {
+    if (!matchId || !playerId) return;
+    setPlayerNoteModal({
+      open: true,
+      matchId,
+      playerId,
+      player: player || "",
+      body: currentNote || "",
+    });
+  };
+  const closePlayerNoteModal = () =>
+    setPlayerNoteModal({ open: false, matchId: "", playerId: "", player: "", body: "" });
+  const savePlayerNote = async (body) => {
+    const { matchId, playerId } = playerNoteModal;
+    if (!matchId || !playerId || !body) return;
+    setNoteSaving(true);
+    try {
+      await notesApi.upsert({ matchId, playerId, body });
+      const key = makePlayerNoteKey(matchId, playerId);
+      setPlayerNotes((prev) => ({ ...prev, [key]: body }));
+      closePlayerNoteModal();
+    } catch (err) {
+      showAlert(err.message || "Failed to save note.", "Notes Error");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+  const deletePlayerNote = async () => {
+    const { matchId, playerId } = playerNoteModal;
+    if (!matchId || !playerId) return;
+    setNoteSaving(true);
+    try {
+      await notesApi.removeByContext({ matchId, playerId });
+      const key = makePlayerNoteKey(matchId, playerId);
+      setPlayerNotes((prev) => {
+        const { [key]: _removed, ...rest } = prev;
+        return rest;
+      });
+      closePlayerNoteModal();
+    } catch (err) {
+      showAlert(err.message || "Failed to delete note.", "Notes Error");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -227,8 +365,8 @@ export default function App() {
               {showDrop && (
                 <div className="dropdown-menu">
                   {[
-                    { label: "Scrim", emoji: "🎮", type: "Scrim" },
-                    { label: "Tournament", emoji: "🏆", type: "Tournament" },
+                    { label: "Scrim", icon: "scrim", type: "Scrim" },
+                    { label: "Tournament", icon: "tournament", type: "Tournament" },
                   ].map((x) => (
                     <button
                       key={x.type}
@@ -238,7 +376,12 @@ export default function App() {
                         setAiMatchType(x.type);
                       }}
                     >
-                      {x.emoji} {x.label}
+                      <span className="dropdown-item-title">
+                        <span className="dropdown-item-icon">
+                          <ActionIcon name={x.icon} />
+                        </span>
+                        {x.label}
+                      </span>
                       <span className="dropdown-item-sub">
                         AI screenshot import
                       </span>
@@ -251,7 +394,12 @@ export default function App() {
                       setShowForm(true);
                     }}
                   >
-                    ✎ Manual Entry
+                    <span className="dropdown-item-title">
+                      <span className="dropdown-item-icon">
+                        <ActionIcon name="manual" />
+                      </span>
+                      Manual Entry
+                    </span>
                     <span className="dropdown-item-sub">
                       Fill in stats manually
                     </span>
@@ -317,7 +465,22 @@ export default function App() {
         {loading && (
           <div className="loading-screen">
             <div className="loading-tri" />
-            <div className="loading-text">Connecting to database...</div>
+            <div className="loading-orbit">
+              <span className="loading-orbit-dot" />
+              <span className="loading-orbit-dot" />
+              <span className="loading-orbit-dot" />
+            </div>
+            <div className="loading-text">
+              Connecting to database
+              <span className="loading-dots">
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
+              </span>
+            </div>
+            <div className="loading-bar">
+              <span className="loading-bar-fill" />
+            </div>
           </div>
         )}
 
@@ -345,9 +508,7 @@ export default function App() {
                       <MatchRow
                         key={m.id}
                         match={m}
-                        onDelete={(id) =>
-                          dispatch({ type: "DELETE_MATCH", id })
-                        }
+                        onDelete={(id) => requestDeleteMatch(id, m.opponent || "this match")}
                       />
                     ))}
                   {filtered.length === 0 && (
@@ -372,9 +533,7 @@ export default function App() {
                       <MatchRow
                         key={m.id}
                         match={m}
-                        onDelete={(id) =>
-                          dispatch({ type: "DELETE_MATCH", id })
-                        }
+                        onDelete={(id) => requestDeleteMatch(id, m.opponent || "this match")}
                       />
                     ))}
                   {filtered.length === 0 && (
@@ -422,6 +581,12 @@ export default function App() {
                               matches={filtered}
                               row={card.row}
                               matchMeta={card.match}
+                              noteText={
+                                playerNotes[
+                                  makePlayerNoteKey(card.match?.id, card.row?.playerId)
+                                ] || ""
+                              }
+                              onNoteClick={openPlayerNoteModal}
                             />
                           ))}
                         </div>
@@ -498,6 +663,11 @@ export default function App() {
         <MatchForm
           dispatch={dispatch}
           onClose={() => setShowForm(false)}
+          onAlert={showAlert}
+          onSaved={() => {
+            setShowForm(false);
+            showSavedToast();
+          }}
           refData={refData}
         />
       )}
@@ -506,9 +676,44 @@ export default function App() {
           matchType={aiMatchType}
           dispatch={dispatch}
           onClose={() => setAiMatchType(null)}
+          onAlert={showAlert}
+          onSaved={() => showSavedToast()}
           refData={refData}
         />
       )}
+      <div className={`gooey-toast${saveToast ? " show" : ""}`} role="status" aria-live="polite" aria-hidden={!saveToast}>
+        <span className="gooey-orb gooey-orb-a" />
+        <span className="gooey-orb gooey-orb-b" />
+        <span className="gooey-toast-text">{saveToast?.text}</span>
+      </div>
+      <AlertModal
+        open={alertState.open}
+        title={alertState.title}
+        message={alertState.message}
+        onClose={() => setAlertState({ open: false, title: "", message: "" })}
+      />
+      <ConfirmModal
+        open={confirmDelete.open}
+        title="Delete Match"
+        message={`Delete ${confirmDelete.label || "this match"}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        onCancel={() => setConfirmDelete({ open: false, id: null, label: "" })}
+        onConfirm={async () => {
+          if (confirmDelete.id) {
+            await dispatch({ type: "DELETE_MATCH", id: confirmDelete.id });
+          }
+          setConfirmDelete({ open: false, id: null, label: "" });
+        }}
+      />
+      <PlayerNoteModal
+        open={playerNoteModal.open}
+        player={playerNoteModal.player}
+        initialBody={playerNoteModal.body}
+        saving={noteSaving}
+        onClose={closePlayerNoteModal}
+        onSave={savePlayerNote}
+        onDelete={deletePlayerNote}
+      />
     </div>
   );
 }
@@ -529,3 +734,4 @@ function FilterSel({ label, val, opts, onChange }) {
     </div>
   );
 }
+

@@ -52,24 +52,26 @@ export function useAppState() {
         case 'ADD_MATCH': {
           const created = await matchesApi.create(action.payload);
           dispatch({ type: 'ADD_MATCH', payload: created });
-          break;
+          return { ok: true, data: created };
         }
         case 'DELETE_MATCH': {
           await matchesApi.remove(action.id);
           dispatch({ type: 'DELETE_MATCH', id: action.id });
-          break;
+          return { ok: true };
         }
         case 'UPDATE_MATCH': {
           const updated = await matchesApi.update(action.payload);
           dispatch({ type: 'UPDATE_MATCH', payload: updated });
-          break;
+          return { ok: true, data: updated };
         }
         default:
           dispatch(action);
+          return { ok: true };
       }
     } catch (err) {
       setApiError(err.message);
       console.error('API Error:', err.message);
+      return { ok: false, error: err.message };
     }
   }
 

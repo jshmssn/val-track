@@ -42,6 +42,7 @@ if ($method === 'GET' && $id !== null) {
 }
 
 // ── GET all matches ──────────────────────────────────────────
+// ── GET all matches ──────────────────────────────────────────
 function getMatches(): void
 {
     $db = getDB();
@@ -103,21 +104,7 @@ function getMatches(): void
 function getMatch(string $id): void
 {
     $db   = getDB();
-    $stmt = $db->prepare("
-        SELECT
-            m.id, m.team_id, m.played_at AS date, m.type, m.result,
-            CONCAT(m.score_us, '-', m.score_them) AS score,
-            mp.name AS map,
-            o.name  AS opponent,
-            m.tournament, m.stage, m.vod_url, m.notes
-        FROM matches m
-        JOIN maps mp          ON m.map_id      = mp.id
-        LEFT JOIN opponents o ON m.opponent_id = o.id
-        WHERE m.id = ?
-    ");
-    $stmt->execute([$id]);
-    $match = $stmt->fetch();
-
+    $match = findMatchById($db, $id);
     if (!$match) sendError('Match not found', 404);
 
     $match['playerStats'] = getPlayerStatsForMatch($db, $id);
@@ -334,6 +321,7 @@ function getPlayerStatsForMatch(PDO $db, string $matchId): array
 {
     $stmt = $db->prepare("
         SELECT
+            p.id AS playerId,
             p.ign AS player,
             a.name AS agent,
             pms.acs,
@@ -380,4 +368,23 @@ function getTeamMetricsForMatch(PDO $db, string $matchId): ?array
         }
     }
     return $result;
+}
+
+function findMatchById(PDO $db, string $id): ?array
+{
+    $stmt = $db->prepare("
+        SELECT
+            m.id, m.team_id, m.played_at AS date, m.type, m.result,
+            CONCAT(m.score_us, '-', m.score_them) AS score,
+            mp.name AS map,
+            o.name  AS opponent,
+            m.tournament, m.stage, m.vod_url, m.notes
+        FROM matches m
+        JOIN maps mp          ON m.map_id      = mp.id
+        LEFT JOIN opponents o ON m.opponent_id = o.id
+        WHERE m.id = ?
+    ");
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    return $row ?: null;
 }

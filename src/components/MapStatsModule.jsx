@@ -80,32 +80,52 @@ export function MapStatsModule({ matches, mapNames = [] }) {
       </div>
 
       <div className="table-wrap">
-        <table className="stats-table mapstats-table">
-          <thead>
-            <tr>
-              <th>Map</th>
-              <th>Map Win %</th>
-              <th>A Win %</th>
-              <th>D Win %</th>
-              <th>A PIS Win %</th>
-              <th>D PIS Win %</th>
-              <th>Times Played</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <tr key={row.map} className={`tone-${rowTone(row.mapWinRate, row.played)} ${idx === 0 ? 'row-overall' : ''}`}>
-                <td className="map-cell">{row.map}</td>
-                <td>{row.mapWinPct}</td>
-                <td>{row.atkWinPct}</td>
-                <td>{row.defWinPct}</td>
-                <td>{row.atkPistolWinPct}</td>
-                <td>{row.defPistolWinPct}</td>
-                <td>{row.played}</td>
+        <div className="mapstats-desktop">
+          <table className="stats-table mapstats-table">
+            <thead>
+              <tr>
+                <th>Map</th>
+                <th>Map Win %</th>
+                <th>A Win %</th>
+                <th>D Win %</th>
+                <th>A PIS Win %</th>
+                <th>D PIS Win %</th>
+                <th>Times Played</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={row.map} className={`tone-${rowTone(row.mapWinRate, row.played)} ${idx === 0 ? 'row-overall' : ''}`}>
+                  <td className="map-cell">{row.map}</td>
+                  <td>{row.mapWinPct}</td>
+                  <td>{row.atkWinPct}</td>
+                  <td>{row.defWinPct}</td>
+                  <td>{row.atkPistolWinPct}</td>
+                  <td>{row.defPistolWinPct}</td>
+                  <td>{row.played}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mapstats-mobile">
+          {rows.map((row, idx) => (
+            <article key={row.map} className={`mapstats-mobile-card tone-${rowTone(row.mapWinRate, row.played)} ${idx === 0 ? 'row-overall' : ''}`}>
+              <div className="mapstats-mobile-head">
+                <span className="mapstats-mobile-name">{row.map}</span>
+                <span className="mapstats-mobile-played">{row.played} played</span>
+              </div>
+              <div className="mapstats-mobile-grid">
+                <div><span>Map Win</span><strong>{row.mapWinPct}</strong></div>
+                <div><span>ATK Win</span><strong>{row.atkWinPct}</strong></div>
+                <div><span>DEF Win</span><strong>{row.defWinPct}</strong></div>
+                <div><span>ATK Pistol</span><strong>{row.atkPistolWinPct}</strong></div>
+                <div><span>DEF Pistol</span><strong>{row.defPistolWinPct}</strong></div>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </div>
   );

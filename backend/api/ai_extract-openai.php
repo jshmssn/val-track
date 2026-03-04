@@ -66,39 +66,10 @@ set_exception_handler(function (Throwable $e) {
 // ============================================================
 // backend/api/ai_extract.php
 //
-// POST /backend/api/ai_extract.php
-//   multipart/form-data:
-//     file            — uploaded screenshot (image)
-//     type            — "Scrim" | "Tournament"
-//     playerAgentMap  — JSON string from a previously processed
-//                       Timeline screenshot (optional but recommended
-//                       when uploading a Scoreboard).
-//                       Shape: [{"player":"Flux","agent":"Killjoy"},...]
-//
-// ── How the two-screenshot flow works ────────────────────────
-//
-//  1. Upload TIMELINE screenshot first  → get playerAgentMap
-//  2. Upload SCOREBOARD screenshot next, passing playerAgentMap
-//     from step 1 in the request body.
-//
-//  When playerAgentMap is present on a Scoreboard upload:
-//    • The AI is told exactly which 5 player names to look for.
-//    • It finds each player's row BY NAME — row colour is irrelevant.
-//    • Agents come from the Timeline map, not the scoreboard icons.
-//    • This is the correct, authoritative source for agents.
-//
-//  When playerAgentMap is absent (standalone scoreboard):
-//    • Falls back to teal-row detection as before.
-//
-// ── Provider: OpenAI API ──────────────────────────────────────
-// Uses the OpenAI /v1/chat/completions endpoint.
-//
-// Default model: gpt-4o
-//   • Strong vision/OCR, good at reading player names in tables
-//   • Supports image input natively
-//
-// Set OPENAI_API_KEY in .env. Get a key at:
-//   https://platform.openai.com/api-keys
+// UPDATED: 2026-03-04-v6-summary-scoreboard-only
+// - TIMELINE is no longer required.
+// - SUMMARY: extracts Round Wins per half + OT (if present) and computes team metrics.
+// - SCOREBOARD: extracts ONLY player, agent (text), ACS, K/D/A (from KDA column).
 // ============================================================
 
 ob_start();
@@ -119,9 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // ── Config ────────────────────────────────────────────────────
-$OPENAI_API_KEY  = $_ENV['OPENAI_API_KEY'] ?? getenv('OPENAI_API_KEY') ?: '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';
+$OPENAI_API_KEY  = $_ENV['OPENAI_API_KEY'] ?? getenv('OPENAI_API_KEY') ?: '';
 $OPENAI_MODEL    = $_ENV['OPENAI_MODEL']   ?? getenv('OPENAI_MODEL')   ?: 'gpt-4o';
-$EXTRACTOR_BUILD = '2026-02-27-v4-timeline-authoritative';
+$EXTRACTOR_BUILD = '2026-03-04-v6-summary-scoreboard-only';
 
 if (empty($OPENAI_API_KEY)) {
     sendError('OPENAI_API_KEY not configured. See https://platform.openai.com/api-keys', 500);
@@ -132,15 +103,6 @@ if (empty($_FILES['file'])) sendError('No file uploaded', 422);
 
 $file      = $_FILES['file'];
 $matchType = $_POST['type'] ?? 'Scrim';
-
-// playerAgentMap passed from a previous Timeline extraction.
-// Shape: [{"player":"Flux","agent":"Killjoy"}, ...]
-$incomingPamRaw = $_POST['playerAgentMap'] ?? null;
-$incomingPam    = [];
-if ($incomingPamRaw) {
-    $decoded = json_decode($incomingPamRaw, true);
-    if (is_array($decoded)) $incomingPam = $decoded;
-}
 
 if ($file['error'] !== UPLOAD_ERR_OK) sendError('File upload error: ' . $file['error'], 422);
 
@@ -177,7 +139,6 @@ function callOpenAI(string $apiKey, string $model, array $messages, bool $jsonMo
         'max_tokens'  => 4096,
     ];
 
-    // Enable JSON mode for supported models (gpt-4o, gpt-4-turbo, gpt-3.5-turbo-0125+)
     if ($jsonMode) {
         $payload['response_format'] = ['type' => 'json_object'];
     }
@@ -214,12 +175,6 @@ function callOpenAI(string $apiKey, string $model, array $messages, bool $jsonMo
     return $decoded;
 }
 
-// Alias for drop-in compatibility with the rest of the codebase
-function callHuggingFace(string $apiKey, string $model, array $messages, bool $jsonMode = true): array
-{
-    return callOpenAI($apiKey, $model, $messages, $jsonMode);
-}
-
 function hfText(array $response): string
 {
     return $response['choices'][0]['message']['content'] ?? '';
@@ -229,7 +184,6 @@ function buildUserMessage(?string $imageDataUrl, string $promptText): array
 {
     $content = [];
     if ($imageDataUrl !== null) {
-        // OpenAI vision format — identical shape to HF's image_url block
         $content[] = [
             'type'      => 'image_url',
             'image_url' => ['url' => $imageDataUrl],
@@ -258,14 +212,12 @@ function parseJson(string $rawText): ?array
     return null;
 }
 
-// Fuzzy-normalise a player name for matching — strips spaces/punctuation, lowercase
-function normaliseKey(string $name): string
+function validateAgentName(?string $candidate, array $dbAgents): ?string
 {
-    return strtolower(preg_replace('/[^a-z0-9]/i', '', $name));
-}
+    if ($candidate === null) return null;
+    $candidate = trim($candidate);
+    if ($candidate === '') return null;
 
-function validateAgentName(string $candidate, array $dbAgents): string
-{
     foreach ($dbAgents as $agent) {
         if (strtolower($agent) === strtolower($candidate)) return $agent;
     }
@@ -275,925 +227,360 @@ function validateAgentName(string $candidate, array $dbAgents): string
     return $candidate;
 }
 
-function cleanPlayerAgentMap(array $rows, array $dbAgents): array
+function parseScorePair(?string $score): array
 {
-    $out = [];
-    $seenPlayerKeys = [];
+    // Accept "14-12", "14 – 12", "14–12"
+    $s = trim((string)$score);
+    $s = str_replace(['—', '–'], '-', $s);
+    $s = preg_replace('/\s+/', '', $s);
 
-    foreach ($rows as $entry) {
-        $player = trim((string)($entry['player'] ?? $entry['playerName'] ?? ''));
-        if ($player === '') continue;
+    if (!preg_match('/^(\d+)\-(\d+)$/', $s, $m)) return [null, null];
+    return [(int)$m[1], (int)$m[2]];
+}
 
-        $playerKey = normaliseKey($player);
-        if ($playerKey === '' || in_array($playerKey, $seenPlayerKeys, true)) continue;
-        $seenPlayerKeys[] = $playerKey;
+/**
+ * Build TEAM METRICS purely from SUMMARY values:
+ * - first half rounds = 12
+ * - second half rounds = 12
+ * - overtime rounds = max(0, totalRounds - 24)
+ * - split atkWins/defWins using the side labels shown in SUMMARY (ATK/DEF)
+ */
+function computeTeamMetricsFromSummary(array $summary): array
+{
+    [$yourScore, $enemyScore] = parseScorePair($summary['score'] ?? null);
 
-        $agentRaw = trim((string)($entry['agent'] ?? $entry['agentName'] ?? ''));
-        $agent = $agentRaw !== '' ? validateAgentName($agentRaw, $dbAgents) : null;
+    $firstHalfWins  = isset($summary['firstHalfWins']) ? (int)$summary['firstHalfWins'] : null;
+    $secondHalfWins = isset($summary['secondHalfWins']) ? (int)$summary['secondHalfWins'] : null;
 
-        $out[] = ['player' => $player, 'agent' => $agent];
-        if (count($out) >= 5) break;
+    $firstHalfSide  = strtoupper(trim((string)($summary['firstHalfSide'] ?? '')));
+    $secondHalfSide = strtoupper(trim((string)($summary['secondHalfSide'] ?? '')));
+
+    $otWinsFromUI = $summary['overtimeWins'] ?? null;
+    if ($otWinsFromUI === '' || $otWinsFromUI === null) $otWinsFromUI = null;
+    if ($otWinsFromUI !== null) $otWinsFromUI = (int)$otWinsFromUI;
+
+    $totalRounds = ($yourScore !== null && $enemyScore !== null) ? ($yourScore + $enemyScore) : null;
+
+    // First half is always 12 rounds
+    $firstHalfRounds = 12;
+
+    // Second half rounds depend on total rounds:
+    // - If match ends early (e.g. 13-10 = 23), second half is 11
+    // - If match goes full regulation (e.g. 13-11 = 24), second half is 12
+    // - If OT exists, second half is still 12, OT is extra
+    $secondHalfRounds = ($totalRounds !== null) ? max(0, min(12, $totalRounds - 12)) : null;
+
+    // Overtime rounds only after 24
+    $otRounds = ($totalRounds !== null) ? max(0, $totalRounds - 24) : 0;
+
+    // Enemy wins per half MUST use actual rounds in that half
+    $enemyFirstHalfWins = ($firstHalfWins !== null) ? ($firstHalfRounds - $firstHalfWins) : null;
+    $enemySecondHalfWins = ($secondHalfWins !== null && $secondHalfRounds !== null)
+        ? ($secondHalfRounds - $secondHalfWins)
+        : null;
+
+    // OT wins/losses
+    $otWins   = ($otRounds > 0) ? ($otWinsFromUI ?? null) : 0;
+    $otLosses = ($otRounds > 0 && $otWins !== null) ? max(0, $otRounds - $otWins) : (($otRounds > 0) ? null : 0);
+
+    // Compute rounds + wins per side based on the side labels shown on Summary
+    $atkRounds = 0;
+    $defRounds = 0;
+    $atkWins   = 0;
+    $defWins   = 0;
+
+    if ($firstHalfSide === 'ATK') {
+        $atkRounds += $firstHalfRounds;
+        $atkWins += ($firstHalfWins ?? 0);
+    }
+    if ($firstHalfSide === 'DEF') {
+        $defRounds += $firstHalfRounds;
+        $defWins += ($firstHalfWins ?? 0);
     }
 
-    return $out;
-}
-
-function hasDuplicateAgents(array $playerAgentMap): bool
-{
-    $seen = [];
-    foreach ($playerAgentMap as $row) {
-        $agent = trim((string)($row['agent'] ?? ''));
-        if ($agent === '') continue;
-        $k = strtolower($agent);
-        if (isset($seen[$k])) return true;
-        $seen[$k] = true;
-    }
-    return false;
-}
-
-function normalizeWinnerValue($winner): ?string
-{
-    $w = strtolower(trim((string)$winner));
-    if ($w === 'us' || $w === 'our' || $w === 'ours' || $w === 'team') return 'us';
-    if ($w === 'them' || $w === 'enemy' || $w === 'opponent' || $w === 'opponents') return 'them';
-    if ($w === 'win' || $w === 'won' || $w === 'w') return 'us';
-    if ($w === 'loss' || $w === 'lose' || $w === 'lost' || $w === 'l') return 'them';
-    if ($w === 'teal' || $w === 'green' || $w === 'cyan' || $w === 'gold' || $w === 'yellow') return 'us';
-    if ($w === 'red' || $w === 'pink' || $w === 'maroon') return 'them';
-    return null;
-}
-
-function normalizeEndConditionValue($condition): ?string
-{
-    $c = strtolower(trim((string)$condition));
-    $c = str_replace([' ', '-'], '_', $c);
-
-    if (in_array($c, ['elimination', 'elim', 'kill', 'killed'], true)) return 'elimination';
-    if (in_array($c, ['spike_detonated', 'detonated', 'detonation', 'spike_exploded'], true)) return 'spike_detonated';
-    if (in_array($c, ['spike_defused', 'defused', 'defuse'], true)) return 'spike_defused';
-    if (in_array($c, ['time_expired', 'time', 'timer', 'timeout'], true)) return 'time_expired';
-    if (in_array($c, ['surrender', 'ff', 'forfeit'], true)) return 'surrender';
-    return null;
-}
-
-function inferWinnerFromRound(array $r): ?string
-{
-    $candidates = [
-        $r['winner'] ?? null,
-        $r['result'] ?? null,
-        $r['roundResult'] ?? null,
-        $r['winLoss'] ?? null,
-        $r['outcome'] ?? null,
-        $r['iconColor'] ?? null,
-        $r['color'] ?? null,
-    ];
-
-    foreach ($candidates as $cand) {
-        $norm = normalizeWinnerValue($cand);
-        if ($norm !== null) return $norm;
-    }
-    return null;
-}
-
-function mergeRoundOutcomesByNumber(array $baseRounds, array $iconRounds): array
-{
-    $byNum = [];
-    foreach ($baseRounds as $r) {
-        $n = (int)($r['roundNumber'] ?? 0);
-        if ($n <= 0) continue;
-        $byNum[$n] = $r;
-    }
-
-    foreach ($iconRounds as $r) {
-        $n = (int)($r['roundNumber'] ?? 0);
-        if ($n <= 0) continue;
-        if (!isset($byNum[$n])) $byNum[$n] = ['roundNumber' => $n];
-        if (isset($r['iconColor'])) {
-            $byNum[$n]['iconColor'] = $r['iconColor'];
-            $byNum[$n]['color'] = $r['iconColor'];
+    if ($secondHalfRounds !== null) {
+        if ($secondHalfSide === 'ATK') {
+            $atkRounds += $secondHalfRounds;
+            $atkWins += ($secondHalfWins ?? 0);
         }
-        if (isset($r['endCondition']) && $r['endCondition'] !== null && $r['endCondition'] !== '') {
-            $byNum[$n]['endCondition'] = $r['endCondition'];
-        }
-        if (isset($r['result']) && $r['result'] !== null && $r['result'] !== '') {
-            $byNum[$n]['result'] = $r['result'];
+        if ($secondHalfSide === 'DEF') {
+            $defRounds += $secondHalfRounds;
+            $defWins += ($secondHalfWins ?? 0);
         }
     }
 
-    ksort($byNum, SORT_NUMERIC);
-    return array_values($byNum);
-}
+    return [
+        'atkRounds'      => $atkRounds,
+        'atkWins'        => $atkWins,
+        'defRounds'      => $defRounds,
+        'defWins'        => $defWins,
+        'otRounds'       => $otRounds,
+        'otWins'         => $otWins,
+        'otLosses'       => $otLosses,
 
-function inferFirstHalfSideFromIcons(array $rounds): ?string
-{
-    $atkVotes = 0;
-    $defVotes = 0;
-
-    foreach ($rounds as $r) {
-        $n = (int)($r['roundNumber'] ?? 0);
-        if ($n < 1 || $n > 12) continue;
-
-        $winner = normalizeWinnerValue($r['winner'] ?? null);
-        $end    = normalizeEndConditionValue($r['endCondition'] ?? null);
-        if ($winner === null || $end === null) continue;
-
-        // Detonation => attacker win, Defuse => defender win.
-        if ($end === 'spike_detonated') {
-            if ($winner === 'us') $atkVotes++;
-            if ($winner === 'them') $defVotes++;
-        } elseif ($end === 'spike_defused') {
-            if ($winner === 'us') $defVotes++;
-            if ($winner === 'them') $atkVotes++;
-        }
-    }
-
-    if ($atkVotes > $defVotes) return 'atk';
-    if ($defVotes > $atkVotes) return 'def';
-    return null;
-}
-
-function recomputeTimelineTeamMetrics(array &$rounds): array
-{
-    // Normalize + sort rounds first.
-    $normRounds = [];
-    foreach ($rounds as $r) {
-        $num = (int)($r['roundNumber'] ?? 0);
-        if ($num <= 0) continue;
-        $normRounds[] = [
-            'roundNumber'    => $num,
-            'winner'         => inferWinnerFromRound($r),
-            'endCondition'   => normalizeEndConditionValue($r['endCondition'] ?? null),
-            'isPistolRound'  => ($num === 1 || $num === 13),
-        ];
-    }
-    usort($normRounds, fn($a, $b) => $a['roundNumber'] <=> $b['roundNumber']);
-
-    // Fallback to model-provided half labels only if icon inference cannot decide.
-    $firstHalfSide = inferFirstHalfSideFromIcons($normRounds);
-    if ($firstHalfSide === null) {
-        foreach ($rounds as $r) {
-            $n = (int)($r['roundNumber'] ?? 0);
-            if ($n < 1 || $n > 12) continue;
-            $h = strtolower(trim((string)($r['half'] ?? '')));
-            if ($h === 'atk' || $h === 'def') {
-                $firstHalfSide = $h;
-                break;
-            }
-        }
-    }
-    if ($firstHalfSide === null) $firstHalfSide = 'def';
-
-    $oppHalf = $firstHalfSide === 'atk' ? 'def' : 'atk';
-    $byRound = [];
-    foreach ($normRounds as $r) {
-        $num = $r['roundNumber'];
-        $half = $num <= 12 ? $firstHalfSide : $oppHalf;
-        $winner = $r['winner'];
-        $end    = $r['endCondition'];
-
-        $byRound[$num] = [
-            'roundNumber'   => $num,
-            'winner'        => $winner ?? ($rounds[$num - 1]['winner'] ?? null),
-            'half'          => $half,
-            'endCondition'  => $end ?? ($rounds[$num - 1]['endCondition'] ?? null),
-            'postPlant'     => $end === 'spike_detonated',
-            'isPistolRound' => ($num === 1 || $num === 13),
-        ];
-    }
-
-    $metrics = [
-        'atkRounds'      => 0,
-        'atkWins'        => 0,
-        'defRounds'      => 0,
-        'defWins'        => 0,
+        // Not available without timeline:
         'postPlantTotal' => 0,
         'postPlantWins'  => 0,
-        'atkPistolWin'   => 'Loss',
-        'defPistolWin'   => 'Loss',
+        'atkPistolWin'   => null,
+        'defPistolWin'   => null,
+
+        // Helpful breakdowns
+        'firstHalf' => [
+            'side'      => ($firstHalfSide === 'ATK' || $firstHalfSide === 'DEF') ? $firstHalfSide : null,
+            'yourWins'  => $firstHalfWins,
+            'enemyWins' => $enemyFirstHalfWins,
+            'rounds'    => $firstHalfRounds,
+        ],
+        'secondHalf' => [
+            'side'      => ($secondHalfSide === 'ATK' || $secondHalfSide === 'DEF') ? $secondHalfSide : null,
+            'yourWins'  => $secondHalfWins,
+            'enemyWins' => $enemySecondHalfWins,
+            'rounds'    => $secondHalfRounds,
+        ],
+        'totalRoundsPlayed' => $totalRounds,
+        'finalScore'        => ($yourScore !== null && $enemyScore !== null) ? "{$yourScore}-{$enemyScore}" : null,
     ];
-
-    foreach ($byRound as $r) {
-        $half   = $r['half'];
-        $winner = normalizeWinnerValue($r['winner']);
-        $end    = normalizeEndConditionValue($r['endCondition']);
-
-        if ($half === 'atk') {
-            $metrics['atkRounds']++;
-            if ($winner === 'us') $metrics['atkWins']++;
-
-            if ($end === 'spike_detonated' || $end === 'spike_defused') {
-                $metrics['postPlantTotal']++;
-                if ($winner === 'us' && $end === 'spike_detonated') {
-                    $metrics['postPlantWins']++;
-                }
-            }
-        } else {
-            $metrics['defRounds']++;
-            if ($winner === 'us') $metrics['defWins']++;
-        }
-
-        if ($r['isPistolRound']) {
-            if ($half === 'atk') {
-                $metrics['atkPistolWin'] = $winner === 'us' ? 'Win' : 'Loss';
-            } else {
-                $metrics['defPistolWin'] = $winner === 'us' ? 'Win' : 'Loss';
-            }
-        }
-    }
-
-    $rounds = array_values($byRound);
-    return $metrics;
 }
 
 // ──────────────────────────────────────────────────────────────
 // STEP 1 — TAB DETECTION
 // ──────────────────────────────────────────────────────────────
-$screenshotType = 'scoreboard';
-
 $tabMessages = buildUserMessage($imageDataUrl, <<<TAB
 You are a Valorant expert. Look at this screenshot and determine which tab of the match results screen is shown.
 
 Tabs:
-- "summary"    — Large agent art left, "MATCH HIGHLIGHTS" table right with DEF/ATK columns.
-- "scoreboard" — Player table with columns: AVG COMBAT SCORE, KDA, ECON RATING, FIRST BLOODS, PLANTS, DEFUSES.
-- "timeline"   — Horizontal round strip (1,2,3…) at top, lower-left player panel with 10 rows showing name + agent.
+- "summary"    — Top shows VICTORY/DEFEAT and score; right shows "Match Highlights" including "ROUND WINS" boxes for 1st Half / 2nd Half (and sometimes OVERTIME).
+- "scoreboard" — Player table with columns: AVG COMBAT SCORE, KDA, ECON, FIRST BLOODS, PLANTS, DEFUSES.
+- "timeline"   — Horizontal round strip (1,2,3…) at top.
 - "performance"— Charts/graphs.
 - "unknown"    — Cannot determine.
 
-Return ONLY valid JSON: {"tab": "summary|scoreboard|timeline|performance|unknown"}
+Return ONLY valid JSON: {"tab":"summary|scoreboard|timeline|performance|unknown"}
 TAB);
 
-$tabParsed      = parseJson(hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $tabMessages)));
-$screenshotType = $tabParsed['tab'] ?? 'scoreboard';
+$tabParsed      = parseJson(hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $tabMessages))) ?? [];
+$screenshotType = $tabParsed['tab'] ?? 'unknown';
 
 // ──────────────────────────────────────────────────────────────
-// STEP 2 — BRANCH: Summary / Timeline / Scoreboard
+// BRANCH: SUMMARY / SCOREBOARD ONLY
 // ──────────────────────────────────────────────────────────────
 
-// ── BRANCH A: Summary tab ─────────────────────────────────────
+if ($screenshotType === 'timeline') {
+    // You said you no longer need timeline — keep it explicit.
+    sendError('Timeline screenshots are no longer supported in this flow. Please upload Summary or Scoreboard.', 422);
+}
+if ($screenshotType === 'performance') {
+    sendError('Performance screenshots are not supported. Please upload Summary or Scoreboard.', 422);
+}
+if ($screenshotType === 'unknown') {
+    sendError('Cannot determine tab type. Please upload a clear Summary or Scoreboard screenshot.', 422);
+}
+
+// ── SUMMARY ────────────────────────────────────────────────────
 if ($screenshotType === 'summary') {
 
-    $mainMessages = buildUserMessage($imageDataUrl, <<<SUMMARY
-You are a Valorant esports data analyst. This is a SUMMARY tab screenshot.
+    $summaryMessages = buildUserMessage($imageDataUrl, <<<SUMMARY
+You are a Valorant esports data extraction assistant reading the SUMMARY tab.
 
-Extract and return ONLY valid JSON (no markdown):
+Extract ONLY what is visible on this SUMMARY screen:
+
+1) Header:
+- result: "Win" if it says VICTORY, "Loss" if DEFEAT
+- score: "YourScore-EnemyScore" (e.g., "14-12")
+
+2) Match Highlights → ROUND WINS:
+- firstHalfSide: label shown above 1st half box (usually "ATK" or "DEF")
+- firstHalfWins: integer in the 1st half box
+- secondHalfSide: label shown above 2nd half box (usually "ATK" or "DEF")
+- secondHalfWins: integer in the 2nd half box
+- overtimeWins: integer in the OVERTIME box IF present, otherwise null (if overtime box not shown)
+
+3) If date and map name are visible on this screen, extract them; otherwise null.
+Valid maps: {$mapsJson}
+
+Return ONLY valid JSON:
 {
   "screenshotType": "summary",
-  "date": "YYYY-MM-DD",
-  "map": "<map name>",
+  "date": "YYYY-MM-DD or null",
+  "map": "<map name or null>",
   "type": "{$matchType}",
   "result": "Win or Loss",
-  "score": "13-5",
-  "mvpPlayer": "<player name>",
-  "mvpAgent": "<agent name>",
-  "mvpAcs": 345,
-  "teamMetrics": {
-    "defRounds": 13, "defWins": 8, "atkRounds": 5, "atkWins": 5,
-    "postPlantTotal": 11, "postPlantWins": 7, "atkPistolWin": "Loss", "defPistolWin": "Loss"
-  },
-  "summaryHighlights": {
-    "def_roundWins": 8, "def_firstBloods": 9, "def_firstBloodWins": 7,
-    "def_eliminationWins": 5, "def_spikesDeployed": 7, "def_postSpikeWins": 3,
-    "def_defusals": 3, "def_defTeamEliminated": 4, "def_detonations": 0,
-    "atk_roundWins": 5, "atk_firstBloods": 4, "atk_firstBloodWins": 4,
-    "atk_eliminationWins": 3, "atk_spikesDeployed": 4, "atk_postSpikeWins": 4,
-    "atk_defusals": 0, "atk_defTeamEliminated": 2, "atk_detonations": 2
-  },
-  "playerStats": [],
+  "score": "14-12",
+  "firstHalfSide": "ATK or DEF or null",
+  "firstHalfWins": 0,
+  "secondHalfSide": "ATK or DEF or null",
+  "secondHalfWins": 0,
+  "overtimeWins": 0,
   "confidence": "high|medium|low",
   "notes": ""
 }
 
-Valid maps: {$mapsJson}
-Rules:
-- result: "VICTORY" → Win, "DEFEAT" → Loss
-- score: bigger number first if Win
-- Use null for unreadable fields
-- playerStats is always []
+CRITICAL:
+- Do not guess sides; read the ATK/DEF labels shown in the Round Wins boxes.
+- If OVERTIME is not shown, set overtimeWins to null.
 SUMMARY);
 
-    $rawText   = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $mainMessages));
+    $rawText   = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $summaryMessages));
     $extracted = parseJson($rawText) ?? [];
 
-    if (empty($extracted)) sendError('Model returned unparseable JSON for Summary tab: ' . substr($rawText, 0, 300), 502);
+    if (empty($extracted)) {
+        sendError('Model returned unparseable JSON for Summary tab: ' . substr($rawText, 0, 300), 502);
+    }
 
     $extracted['screenshotType'] = 'summary';
     $extracted['type']           = $matchType;
 
+    // Compute team metrics server-side (no Timeline)
+    $teamMetrics = computeTeamMetricsFromSummary($extracted);
+
+    // Backward-compat: keep teamMetrics key where your UI expects it
+    $extracted['teamMetrics'] = [
+        'atkRounds'      => $teamMetrics['atkRounds'],
+        'atkWins'        => $teamMetrics['atkWins'],
+        'defRounds'      => $teamMetrics['defRounds'],
+        'defWins'        => $teamMetrics['defWins'],
+        'otRounds'       => $teamMetrics['otRounds'],
+        'otWins'         => $teamMetrics['otWins'],
+        'otLosses'       => $teamMetrics['otLosses'],
+        'postPlantTotal' => $teamMetrics['postPlantTotal'],
+        'postPlantWins'  => $teamMetrics['postPlantWins'],
+        'atkPistolWin'   => $teamMetrics['atkPistolWin'],
+        'defPistolWin'   => $teamMetrics['defPistolWin'],
+
+        // Optional helpful additions (safe to ignore in frontend)
+        'firstHalf'        => $teamMetrics['firstHalf'],
+        'secondHalf'       => $teamMetrics['secondHalf'],
+        'totalRoundsPlayed' => $teamMetrics['totalRoundsPlayed'],
+        'finalScore'       => $teamMetrics['finalScore'],
+    ];
+
+    // Summary has no player rows
+    $extracted['playerStats'] = [];
+
     sendSuccess([
         'extracted'       => $extracted,
         'screenshotType'  => 'summary',
-        'playerAgentMap'  => [],
+        'playerAgentMap'  => [], // deprecated
         'raw'             => $rawText,
         'model'           => $OPENAI_MODEL,
         'extractorBuild'  => $EXTRACTOR_BUILD,
         'processingSteps' => [
             'step1_tabDetection' => 'Detected: Summary tab',
-            'step2_extraction'   => 'Completed',
-            'step3_playerMerge'  => 'Skipped — Summary has no player rows',
+            'step2_extraction'   => 'Extracted score + round wins (1st/2nd/OT if present)',
+            'step3_teamMetrics'  => 'Computed atk/def/ot metrics from Summary (no Timeline)',
         ],
     ]);
 }
 
-// ── BRANCH B: Timeline tab ────────────────────────────────────
-if ($screenshotType === 'timeline') {
+// ── SCOREBOARD ────────────────────────────────────────────────
+$dbAgentList = json_decode($agentsJson, true) ?? [];
 
-    // Pass 1 — round-by-round data + team metrics
-    $timelineMessages = buildUserMessage($imageDataUrl, <<<TIMELINE
-I'm sharing a cropped image of a Valorant match TIMELINE icon row. Each icon represents one round result for my team. Analyze every round icon left to right and extract both win/loss results and ATK/DEF side stats.
+$scoreboardMessages = buildUserMessage($imageDataUrl, <<<SCOREBOARD
+You are a Valorant esports data extraction assistant reading the SCOREBOARD tab.
 
-Icon Legend:
+We only need OUR TEAM (the teal/green team). The scoreboard is grouped by team.
+Extract EXACTLY the 5 players from the teal/green team (ignore the red team).
 
-Teal/green flame = Win (ATK round win)
-Teal/green claw = Win (DEF round win)
-Teal/green X inside circle = Win
-Gold/yellow star = Win
-Red flame = Loss (DEF round loss)
-Red claw = Loss (ATK round loss)
-Red X inside circle = Loss
+For each extracted player, read:
+- player: IGN exactly as shown
+- agent: agent name TEXT shown under the player name (do not guess from the icon)
+- acs: number in AVG COMBAT SCORE column
+- kills, deaths, assists: from the KDA column formatted like "K / D / A"
 
-Rules:
+IGNORE:
+- rank icons
+- agent icons
+- econ, first bloods, plants, defuses and any other columns
 
-- ANY teal, green, or gold/yellow icon = WIN
-- ANY red icon = LOSS
-- Count icons left to right, labeled position 1 through N
-
-Side determination (first half, rounds 1-12):
-
-- Red claw OR teal flame in rounds 1-12 -> team started as ATTACKER
-- Green claw OR red flame in rounds 1-12 -> team started as DEFENDER
-
-Side swaps after round 12 (halftime):
-Rounds 13+ are the opposite side.
-
-Pistol Round Checker (must include):
-
-- Treat Round 1 and Round 13 as pistol rounds.
-- Determine your team's side for each pistol:
-  - Round 1 side = starting side
-  - Round 13 side = opposite side after halftime
-- For each pistol round, output:
-  - Round number
-  - Side (ATK/DEF)
-  - Icon color
-  - Win/Loss result
-- Also summarize pistol performance:
-  - Pistol wins / pistol losses
-  - State explicitly whether your team won/lost R1 pistol and R13 pistol
-
-Tasks:
-
-- List every round number with its icon color and Win/Loss result
-- Count total Wins and total Losses overall
-- List which round numbers were wins
-- Identify which side the team started on (ATK or DEF) based on rounds 1-12 icons
-- Count Wins and Losses for rounds 1-12 (starting side)
-- Count Wins and Losses for rounds 13+ (opposite side)
-- Verify total wins match any visible scoreboard (e.g. 6-13)
-
-Valid maps: {$mapsJson}
+Valid agents: {$agentsJson}
 
 Return ONLY valid JSON:
 {
-  "screenshotType": "timeline",
+  "screenshotType": "scoreboard",
   "date": "YYYY-MM-DD or null",
   "map": "<map name or null>",
   "type": "{$matchType}",
-  "result": "Win or Loss",
-  "score": "13-5",
-  "rounds": [
-    {"roundNumber":1,"winner":"us","half":"def","endCondition":"elimination","postPlant":false,"isPistolRound":true}
-  ],
-  "teamMetrics": {"atkRounds":6,"atkWins":5,"defRounds":12,"defWins":8,"postPlantTotal":9,"postPlantWins":6,"atkPistolWin":"Win","defPistolWin":"Loss"},
-  "playerStats": [],
-  "confidence": "high|medium|low",
-  "notes": ""
-}
-TIMELINE);
-
-    $rawText   = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $timelineMessages));
-    $extracted = parseJson($rawText) ?? [];
-
-    if (empty($extracted)) sendError('Model returned unparseable JSON for Timeline tab: ' . substr($rawText, 0, 300), 502);
-
-    $extracted['screenshotType'] = 'timeline';
-    $extracted['type']           = $matchType;
-    $extractedRounds = is_array($extracted['rounds'] ?? null) ? $extracted['rounds'] : [];
-
-    // Dedicated icon pass for team metrics reliability (winner by icon color).
-    $iconRounds   = [];
-    $iconMessages = buildUserMessage($imageDataUrl, <<<ICONPASS
-Read the TIMELINE icon row only (rounds left to right, 1..N).
-
-For each round icon extract:
-- roundNumber
-- iconColor: "teal" | "green" | "gold" | "yellow" | "red" | "pink"
-- endCondition: "elimination" | "spike_detonated" | "spike_defused" | "time_expired" | "surrender"
-- result: "Win" if iconColor is teal/green/gold/yellow, "Loss" if iconColor is red/pink
-
-Return ONLY valid JSON:
-{
-  "rounds": [
-    {"roundNumber":1,"iconColor":"red","endCondition":"elimination","result":"Loss"}
-  ]
-}
-ICONPASS);
-    $iconRaw    = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $iconMessages));
-    $iconParsed = parseJson($iconRaw) ?? [];
-    if (is_array($iconParsed['rounds'] ?? null)) {
-        $iconRounds = $iconParsed['rounds'];
-    }
-    if (!empty($iconRounds)) {
-        $extractedRounds = mergeRoundOutcomesByNumber($extractedRounds, $iconRounds);
-    }
-    if (!empty($extractedRounds)) {
-        $computed       = recomputeTimelineTeamMetrics($extractedRounds);
-        $currentMetrics = is_array($extracted['teamMetrics'] ?? null) ? $extracted['teamMetrics'] : [];
-        $extracted['teamMetrics'] = array_merge($currentMetrics, [
-            'atkWins'        => $computed['atkWins'],
-            'defWins'        => $computed['defWins'],
-            'atkPistolWin'   => $computed['atkPistolWin'],
-            'defPistolWin'   => $computed['defPistolWin'],
-            'postPlantTotal' => $computed['postPlantTotal'],
-            'postPlantWins'  => $computed['postPlantWins'],
-        ]);
-        $extracted['rounds'] = $extractedRounds;
-    }
-
-    // ── Pass 2 — extract player names + agents from the player panel ──
-    $agentImageDataUrl = $imageDataUrl; // fallback: full image
-
-    if (function_exists('imagecreatefromstring')) {
-        $imgData = base64_decode(preg_replace('/^data:[^;]+;base64,/', '', $imageDataUrl));
-        $src     = @imagecreatefromstring($imgData);
-        if ($src !== false) {
-            $fullW = imagesx($src);
-            $fullH = imagesy($src);
-
-            $cropX = 0;
-            $cropY = (int)($fullH * 0.58);
-            $cropW = (int)($fullW * 0.52);
-            $cropH = (int)($fullH * 0.40);
-
-            $cropped = imagecreatetruecolor($cropW, $cropH);
-            imagecopy($cropped, $src, 0, 0, $cropX, $cropY, $cropW, $cropH);
-
-            ob_start();
-            imagepng($cropped);
-            $pngBytes = ob_get_clean();
-            imagedestroy($src);
-            imagedestroy($cropped);
-
-            if ($pngBytes) {
-                $agentImageDataUrl = 'data:image/png;base64,' . base64_encode($pngBytes);
-            }
-        }
-    }
-
-    $agentMessages = buildUserMessage($agentImageDataUrl, <<<AGENTPROMPT
-You are reading a Valorant TIMELINE tab screenshot (or a cropped portion of its lower-left player panel).
-
-The player panel has rows. Each row shows:
-  Line 1: the player's display name / IGN
-  Line 2: the agent name they are playing (TEXT — read the label, do NOT guess from icons)
-
-Extract the top 5 rows only (these are OUR team — the teal/green team).
-
-CRITICAL INSTRUCTIONS:
-- Read the AGENT NAME TEXT that appears beneath each player name. It is written in plain text.
-- Do NOT guess agents from icon colours or artwork — read the actual text label.
-- Pay close attention to similar-looking agent names. For example:
-    "Tejo" and "Iso" are two DIFFERENT agents — read the text carefully.
-    "Viper" and "Vyse" are two DIFFERENT agents — read the text carefully.
-- The agent name must exactly match one of the valid names listed below.
-- If you are unsure between two similar names, pick the one whose text most closely matches what is written.
-
-Valid agent names: {$agentsJson}
-
-Return ONLY valid JSON:
-{
-  "playerAgentMap": [
-    {"player":"NAME","agent":"AGENT"},
-    {"player":"NAME","agent":"AGENT"},
-    {"player":"NAME","agent":"AGENT"},
-    {"player":"NAME","agent":"AGENT"},
-    {"player":"NAME","agent":"AGENT"}
-  ]
-}
-AGENTPROMPT);
-
-    $agentRaw       = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $agentMessages));
-    $agentParsed    = parseJson($agentRaw) ?? [];
-    $playerAgentMap = $agentParsed['playerAgentMap'] ?? [];
-
-    // Validate + clean
-    $dbAgentList    = json_decode($agentsJson, true) ?? [];
-    $playerAgentMap = cleanPlayerAgentMap(is_array($playerAgentMap) ? $playerAgentMap : [], $dbAgentList);
-
-    // Strict retry if output looks suspicious
-    $needsStrictRetry = count($playerAgentMap) < 5 || hasDuplicateAgents($playerAgentMap);
-    if ($needsStrictRetry) {
-        $strictMessages = buildUserMessage($imageDataUrl, <<<STRICTAGENTS
-You are an OCR extractor for a Valorant TIMELINE screenshot.
-
-Read ONLY the lower-left player panel and extract OUR TEAM (top 5 teal rows).
-Each row has:
-  - player name (line 1)
-  - agent name text directly below it (line 2)
-
-CRITICAL RULES:
-- Agent MUST come from the TEXT label below the player name.
-- Never infer from portrait/icon/artwork colors.
-- If text is unreadable, set agent to null.
-- The 5 players on one team must have 5 different agents (no duplicates).
-- Keep exact player spelling from the screenshot.
-
-Valid agent names: {$agentsJson}
-
-Return ONLY valid JSON:
-{
-  "playerAgentMap": [
-    {"player":"NAME","agent":"AGENT_OR_NULL"},
-    {"player":"NAME","agent":"AGENT_OR_NULL"},
-    {"player":"NAME","agent":"AGENT_OR_NULL"},
-    {"player":"NAME","agent":"AGENT_OR_NULL"},
-    {"player":"NAME","agent":"AGENT_OR_NULL"}
-  ]
-}
-STRICTAGENTS);
-
-        $strictRaw    = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $strictMessages));
-        $strictParsed = parseJson($strictRaw) ?? [];
-        $strictMap    = cleanPlayerAgentMap(is_array($strictParsed['playerAgentMap'] ?? null) ? $strictParsed['playerAgentMap'] : [], $dbAgentList);
-
-        if (!empty($strictMap) && (!hasDuplicateAgents($strictMap) || count($strictMap) >= count($playerAgentMap))) {
-            $playerAgentMap = $strictMap;
-        }
-    }
-
-    // Fallback: retry on full image if nothing extracted
-    if (empty($playerAgentMap)) {
-        $fallbackMessages = buildUserMessage($imageDataUrl, <<<FALLBACK
-You are an OCR extractor for a Valorant TIMELINE screenshot.
-
-Read ONLY the lower-left player table. It has 10 rows:
-  - Top 5 rows = teal/green team (OUR team)
-  - Bottom 5 rows = red team (opponents)
-
-For each row extract:
-  - rowPosition (1..10 top to bottom)
-  - player (display name)
-  - agent (agent name TEXT below the player name — read the label, not the icon. "Tejo" and "Iso" are different agents. "Viper" and "Vyse" are different agents.)
-  - rowColor ("teal" or "red")
-
-Valid agent names: {$agentsJson}
-
-Return ONLY valid JSON:
-{
-  "rows": [
-    {"rowPosition":1,"player":"NAME","agent":"AGENT","rowColor":"teal"}
-  ]
-}
-FALLBACK);
-
-        $fallbackRaw    = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $fallbackMessages));
-        $fallbackParsed = parseJson($fallbackRaw) ?? [];
-
-        $rows = $fallbackParsed['rows'] ?? $fallbackParsed['playerRows'] ?? [];
-        $rows = is_array($rows) ? $rows : [];
-
-        $tealRows = array_filter($rows, fn($r) => in_array(strtolower(trim((string)($r['rowColor'] ?? ''))), ['teal', 'green', 'cyan']));
-        if (empty($tealRows) && !empty($rows)) {
-            usort($rows, fn($a, $b) => (int)($a['rowPosition'] ?? 999) - (int)($b['rowPosition'] ?? 999));
-            $tealRows = array_slice($rows, 0, 5);
-        }
-
-        $fallbackMap = cleanPlayerAgentMap($tealRows, $dbAgentList);
-        if (!empty($fallbackMap)) $playerAgentMap = $fallbackMap;
-    }
-
-    $extracted['playerAgentMap'] = $playerAgentMap;
-
-    sendSuccess([
-        'extracted'       => $extracted,
-        'screenshotType'  => 'timeline',
-        'playerAgentMap'  => $playerAgentMap,
-        'raw'             => $rawText,
-        'model'           => $OPENAI_MODEL,
-        'extractorBuild'  => $EXTRACTOR_BUILD,
-        'processingSteps' => [
-            'step1_tabDetection' => 'Detected: Timeline tab',
-            'step2_extraction'   => 'Completed — round-by-round data extracted',
-            'step3_playerMerge'  => empty($playerAgentMap)
-                ? 'Agent panel not found or unreadable'
-                : 'Extracted ' . count($playerAgentMap) . ' player→agent mappings',
-        ],
-    ]);
-}
-
-// ── BRANCH C: Scoreboard tab ──────────────────────────────────
-$dbAgentList    = json_decode($agentsJson, true) ?? [];
-$hasTimelinePam = !empty($incomingPam);
-
-if ($hasTimelinePam) {
-    // ── SCOREBOARD WITH TIMELINE DATA ────────────────────────
-    $playerLookupLines = [];
-    $agentByNormKey    = [];
-
-    foreach ($incomingPam as $entry) {
-        $pName = trim((string)($entry['player'] ?? ''));
-        $aName = trim((string)($entry['agent']  ?? ''));
-        if ($pName === '') continue;
-        $playerLookupLines[] = "  - \"$pName\"";
-        $agentByNormKey[normaliseKey($pName)] = $aName ?: null;
-    }
-
-    $playerListStr = implode("\n", $playerLookupLines);
-
-    $scoreboardPrompt = <<<PROMPT
-You are a Valorant esports data analyst reading a SCOREBOARD screenshot.
-
-The scoreboard is a TABLE. Each row is a different player with DIFFERENT numbers.
-You must read the actual number shown in the cell for EACH player individually.
-DO NOT copy the same stats to multiple players — every player has unique numbers.
-
-OUR TEAM PLAYERS (find these exact names, each is a separate row in the table):
-{$playerListStr}
-
-COLUMN MAPPING — read these specific columns for each player:
-  AVG COMBAT SCORE column → acs
-  K column (or KILLS)     → kills
-  D column (or DEATHS)    → deaths
-  A column (or ASSISTS)   → assists
-  ADR column              → adr  (null if not shown)
-  KAST column             → kast (null if not shown)
-  FIRST BLOODS column     → firstBloods (integer)
-  PLANTS column           → plants (integer)
-  DEFUSES column          → defuses (integer)
-
-STEP-BY-STEP INSTRUCTIONS:
-1. Locate each player's row by their name.
-2. For that row, read the number in EACH column independently.
-3. Every player will have DIFFERENT numbers — the top player has higher ACS than the bottom player.
-4. DO NOT repeat the same number for multiple players.
-
-Also extract match header info: date, map, result (Win/Loss), score (e.g. "13-5"), opponent, tournament, stage.
-Valid maps: {$mapsJson}
-
-Return ONLY valid JSON (no markdown). IMPORTANT: each player object must have the ACTUAL numbers read from their row — they must NOT all be the same:
-{
-  "screenshotType": "scoreboard",
-  "date": "YYYY-MM-DD or null",
-  "map": "<map name>",
-  "type": "{$matchType}",
-  "result": "Win or Loss",
-  "score": "<score>",
-  "opponent": null,
-  "tournament": null,
-  "stage": null,
+  "result": "Win or Loss or null",
+  "score": "14-12 or null",
   "playerStats": [
-    {
-      "player": "<name from list above>",
-      "acs": <ACTUAL number from ACS column for THIS player — NOT a placeholder>,
-      "kills": <ACTUAL number from K column for THIS player>,
-      "deaths": <ACTUAL number from D column for THIS player>,
-      "assists": <ACTUAL number from A column for THIS player>,
-      "adr": <ACTUAL number or null>,
-      "kast": <ACTUAL number or null>,
-      "fkRate": null,
-      "clutchRate": null,
-      "firstBloods": <ACTUAL number from FIRST BLOODS column>,
-      "plants": <ACTUAL number from PLANTS column>,
-      "defuses": <ACTUAL number from DEFUSES column>
-    }
+    {"player":"NAME","agent":"AGENT","acs":296,"kills":26,"deaths":22,"assists":5}
   ],
-  "teamMetrics": {
-    "atkRounds": 0, "atkWins": 0, "defRounds": 0, "defWins": 0,
-    "postPlantTotal": 0, "postPlantWins": 0, "atkPistolWin": "Loss", "defPistolWin": "Loss"
-  },
   "confidence": "high|medium|low",
   "notes": ""
 }
 
 CRITICAL RULES:
-- Each player's acs, kills, deaths, assists MUST be different from each other.
-- If all 5 players end up with the same ACS value, you have made an error — re-read the screenshot.
-- fkRate and clutchRate are 0.0–1.0 decimals (null if column not visible).
-- teamMetrics all zeros — team metrics come from the Timeline screenshot.
-- Include EXACTLY the 5 players listed — no more, no less.
-PROMPT;
+- Extract exactly 5 teal/green players.
+- Agent must come from the TEXT label under the player name.
+- KDA must be parsed into kills/deaths/assists integers.
+SCOREBOARD);
 
-    $mainMessages = buildUserMessage($imageDataUrl, $scoreboardPrompt);
-    $rawText      = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $mainMessages));
-    $extracted    = parseJson($rawText);
+$rawText   = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $scoreboardMessages));
+$extracted = parseJson($rawText) ?? [];
 
-    if (!$extracted) sendError('Model returned unparseable JSON: ' . substr($rawText, 0, 300), 502);
-
-    // Identical-stats guard
-    $statsRows  = $extracted['playerStats'] ?? [];
-    $acsValues  = array_filter(array_column($statsRows, 'acs'), fn($v) => $v !== null);
-    $allSameAcs = count($acsValues) >= 2 && count(array_unique($acsValues)) === 1;
-
-    if ($allSameAcs && count($statsRows) >= 2) {
-        $namedPlayerLines = [];
-        foreach ($incomingPam as $entry) {
-            $pName = trim((string)($entry['player'] ?? ''));
-            if ($pName !== '') $namedPlayerLines[] = "  - Player \"$pName\": read their row's ACS, K, D, A, FIRST BLOODS, PLANTS, DEFUSES";
-        }
-        $namedStr = implode("\n", $namedPlayerLines);
-
-        $retryPrompt = <<<RETRY
-This is a Valorant SCOREBOARD screenshot showing a table of player stats.
-Each row in the table belongs to a DIFFERENT player and has DIFFERENT numbers.
-
-I need you to read the ACTUAL numbers from the screenshot for each specific player.
-DO NOT use placeholder values. DO NOT copy the same number to multiple players.
-
-Find each player by their name and read the number actually shown in their row:
-{$namedStr}
-
-The columns you must read from (left to right in the table):
-  AVG COMBAT SCORE (or ACS) → acs
-  K (kills) → kills
-  D (deaths) → deaths
-  A (assists) → assists
-  FIRST BLOODS → firstBloods
-  PLANTS → plants
-  DEFUSES → defuses
-
-Return ONLY valid JSON — each player MUST have different acs/kills/deaths values:
-{
-  "playerStats": [
-    {"player": "<name>", "acs": <number>, "kills": <number>, "deaths": <number>, "assists": <number>, "adr": null, "kast": null, "fkRate": null, "clutchRate": null, "firstBloods": <number>, "plants": <number>, "defuses": <number>}
-  ]
-}
-RETRY;
-
-        $retryMessages  = buildUserMessage($imageDataUrl, $retryPrompt);
-        $retryRaw       = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $retryMessages));
-        $retryExtracted = parseJson($retryRaw);
-
-        if (!empty($retryExtracted['playerStats'])) {
-            $extracted['playerStats'] = $retryExtracted['playerStats'];
-            $extracted['notes'] = ($extracted['notes'] ?? '') . ' [auto-retry: identical-stats detected]';
-        }
-    }
-
-    // Whitelist filter + Timeline agent injection
-    $finalStats      = [];
-    $matchedNormKeys = [];
-
-    foreach ($extracted['playerStats'] ?? [] as $row) {
-        $normKey = normaliseKey((string)($row['player'] ?? ''));
-
-        if (!array_key_exists($normKey, $agentByNormKey)) continue;
-        if (in_array($normKey, $matchedNormKeys)) continue;
-        $matchedNormKeys[] = $normKey;
-
-        $canonicalName = $row['player'];
-        foreach ($incomingPam as $pam) {
-            if (normaliseKey($pam['player']) === $normKey) {
-                $canonicalName = $pam['player'];
-                break;
-            }
-        }
-
-        $timelineAgent = $agentByNormKey[$normKey];
-
-        $finalStats[] = [
-            'player'      => $canonicalName,
-            'agent'       => $timelineAgent ? validateAgentName($timelineAgent, $dbAgentList) : null,
-            'acs'         => $row['acs']         ?? null,
-            'kills'       => $row['kills']       ?? null,
-            'deaths'      => $row['deaths']      ?? null,
-            'assists'     => $row['assists']     ?? null,
-            'adr'         => $row['adr']         ?? null,
-            'kast'        => $row['kast']        ?? null,
-            'fkRate'      => $row['fkRate']      ?? null,
-            'clutchRate'  => $row['clutchRate']  ?? null,
-            'firstBloods' => $row['firstBloods'] ?? 0,
-            'plants'      => $row['plants']      ?? 0,
-            'defuses'     => $row['defuses']     ?? 0,
-        ];
-    }
-
-    // Add blank rows for any missed players
-    $returnedNormKeys = array_map(fn($r) => normaliseKey($r['player']), $finalStats);
-    foreach ($incomingPam as $pam) {
-        $pName = trim((string)($pam['player'] ?? ''));
-        if ($pName === '') continue;
-        if (!in_array(normaliseKey($pName), $returnedNormKeys)) {
-            $agent = trim((string)($pam['agent'] ?? ''));
-            $finalStats[] = [
-                'player'      => $pName,
-                'agent'       => $agent !== '' ? validateAgentName($agent, $dbAgentList) : null,
-                'acs'         => null,
-                'kills'       => null,
-                'deaths'      => null,
-                'assists'     => null,
-                'adr'         => null,
-                'kast'        => null,
-                'fkRate'      => null,
-                'clutchRate'  => null,
-                'firstBloods' => 0,
-                'plants'      => 0,
-                'defuses'     => 0,
-            ];
-        }
-    }
-
-    $extracted['playerStats']    = $finalStats;
-    $extracted['screenshotType'] = 'scoreboard';
-    $extracted['type']           = $matchType;
-    $extracted['teamFilter']     = 'timeline_authoritative';
-
-    sendSuccess([
-        'extracted'       => $extracted,
-        'screenshotType'  => 'scoreboard',
-        'playerAgentMap'  => $incomingPam,
-        'raw'             => $rawText,
-        'model'           => $OPENAI_MODEL,
-        'extractorBuild'  => $EXTRACTOR_BUILD,
-        'processingSteps' => [
-            'step1_tabDetection' => 'Detected: Scoreboard tab',
-            'step2_extraction'   => 'Completed — stats extracted by player name (Timeline authoritative)',
-            'step3_playerMerge'  => 'Agents injected from Timeline playerAgentMap — scoreboard icons ignored',
-        ],
-    ]);
+if (empty($extracted)) {
+    sendError('Model returned unparseable JSON for Scoreboard tab: ' . substr($rawText, 0, 300), 502);
 }
 
-// ── SCOREBOARD STANDALONE (no Timeline data) ──────────────────
-$scoreboardPrompt = <<<PROMPT
-Please follow these guidelines when extracting rows: Identify the rows with a green or blue-green background. These rows represent our team (TEAL side) and should be included. Identify the rows with a red or maroon background. These rows represent the opposing team (RED side) and should be excluded.
-
-Valid maps: {$mapsJson}
-Valid agents: {$agentsJson}
-
-Return ONLY valid JSON (no markdown):
-{
-  "screenshotType": "scoreboard",
-  "date": "YYYY-MM-DD",
-  "map": "<map>",
-  "type": "{$matchType}",
-  "result": "Win",
-  "score": "13-5",
-  "opponent": null,
-  "tournament": null,
-  "stage": null,
-  "playerStats": [
-    {
-      "player": "<IGN exactly as shown>",
-      "agent": "<agent name>",
-      "acs": 287,
-      "kills": 22,
-      "deaths": 15,
-      "assists": 4,
-      "adr": 178,
-      "kast": 76,
-      "fkRate": 0.68,
-      "clutchRate": 0.50,
-      "firstBloods": 0,
-      "plants": 0,
-      "defuses": 0
-    }
-  ],
-  "teamMetrics": {
-    "atkRounds": 0, "atkWins": 0, "defRounds": 0, "defWins": 0,
-    "postPlantTotal": 0, "postPlantWins": 0, "atkPistolWin": "Loss", "defPistolWin": "Loss"
-  },
-  "confidence": "high|medium|low",
-  "notes": ""
-}
-PROMPT;
-
-$mainMessages = buildUserMessage($imageDataUrl, $scoreboardPrompt);
-$rawText      = hfText(callOpenAI($OPENAI_API_KEY, $OPENAI_MODEL, $mainMessages));
-$extracted    = parseJson($rawText);
-
-if (!$extracted) sendError('Model returned unparseable JSON: ' . substr($rawText, 0, 300), 502);
-
-$rawStats = array_slice($extracted['playerStats'] ?? [], 0, 5);
-foreach ($rawStats as &$player) {
-    if (!empty($player['agent'])) {
-        $player['agent'] = validateAgentName($player['agent'], $dbAgentList);
-    }
-}
-unset($player);
-$extracted['playerStats']    = $rawStats;
 $extracted['screenshotType'] = 'scoreboard';
 $extracted['type']           = $matchType;
-$extracted['teamFilter']     = 'teal_rows_only';
+
+// Sanitize + validate agent names, and keep only required fields
+$cleanStats = [];
+$rows = is_array($extracted['playerStats'] ?? null) ? $extracted['playerStats'] : [];
+foreach ($rows as $r) {
+    if (!is_array($r)) continue;
+
+    $player = trim((string)($r['player'] ?? ''));
+    if ($player === '') continue;
+
+    $agent  = validateAgentName($r['agent'] ?? null, $dbAgentList);
+
+    $acs    = isset($r['acs']) ? (int)$r['acs'] : null;
+    $kills  = isset($r['kills']) ? (int)$r['kills'] : null;
+    $deaths = isset($r['deaths']) ? (int)$r['deaths'] : null;
+    $assists = isset($r['assists']) ? (int)$r['assists'] : null;
+
+    $cleanStats[] = [
+        'player'  => $player,
+        'agent'   => $agent,
+        'acs'     => $acs,
+        'kills'   => $kills,
+        'deaths'  => $deaths,
+        'assists' => $assists,
+    ];
+    if (count($cleanStats) >= 5) break;
+}
+
+// Ensure exactly 5 rows max (your UI expects 5)
+$extracted['playerStats'] = array_slice($cleanStats, 0, 5);
+
+// Backward-compat: scoreboard does not provide teamMetrics now
+if (!isset($extracted['teamMetrics']) || !is_array($extracted['teamMetrics'])) {
+    $extracted['teamMetrics'] = [
+        'atkRounds'      => 0,
+        'atkWins'        => 0,
+        'defRounds'      => 0,
+        'defWins'        => 0,
+        'otRounds'       => 0,
+        'otWins'         => 0,
+        'otLosses'       => 0,
+        'postPlantTotal' => 0,
+        'postPlantWins'  => 0,
+        'atkPistolWin'   => null,
+        'defPistolWin'   => null,
+    ];
+}
 
 sendSuccess([
     'extracted'       => $extracted,
     'screenshotType'  => 'scoreboard',
-    'playerAgentMap'  => [],
+    'playerAgentMap'  => [], // deprecated
     'raw'             => $rawText,
     'model'           => $OPENAI_MODEL,
     'extractorBuild'  => $EXTRACTOR_BUILD,
     'processingSteps' => [
         'step1_tabDetection' => 'Detected: Scoreboard tab',
-        'step2_extraction'   => 'Completed — teal rows only (no Timeline data provided)',
-        'step3_playerMerge'  => 'Skipped — upload a Timeline screenshot first for accurate agents',
+        'step2_extraction'   => 'Extracted 5 teal players: player, agent(text), ACS, K/D/A',
     ],
 ]);

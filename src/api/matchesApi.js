@@ -3,7 +3,7 @@
 // HTTP client for the PHP backend.
 //
 // BASE_URL points to your backend folder.
-// XAMPP/WAMP dev:  http://localhost/valorant-tracker-final/backend
+// XAMPP/WAMP dev:  http://localhost/val-track/backend
 // Production:      https://yourdomain.com/backend
 //
 // Set REACT_APP_API_URL in your .env to override.
@@ -179,4 +179,26 @@ export const referenceApi = {
     request(`${BASE}/api/reference.php?type=agents&id=${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+};
+
+export const notesApi = {
+  getAll: async () =>
+    request(`${BASE}/api/coaching_notes.php?team_id=${TEAM_ID}`),
+  upsert: async ({ matchId, playerId, body, title = null, tags = null }) =>
+    request(`${BASE}/api/coaching_notes.php`, {
+      method: "POST",
+      body: JSON.stringify({
+        team_id: TEAM_ID,
+        match_id: matchId,
+        player_id: playerId,
+        title,
+        body,
+        tags,
+      }),
+    }),
+  removeByContext: async ({ matchId, playerId }) =>
+    request(
+      `${BASE}/api/coaching_notes.php?team_id=${encodeURIComponent(TEAM_ID)}&match_id=${encodeURIComponent(matchId)}&player_id=${encodeURIComponent(playerId)}`,
+      { method: "DELETE" },
+    ),
 };

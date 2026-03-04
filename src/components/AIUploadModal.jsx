@@ -1,28 +1,46 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { C, styles } from '../styles/tokens';
-import { aiApi } from '../api/matchesApi';
-import { MatchForm } from './MatchForm';
+import { useState, useRef, useCallback, useEffect } from "react";
+import { C, styles } from "../styles/tokens";
+import { aiApi } from "../api/matchesApi";
+import { MatchForm } from "./MatchForm";
 
-const ACCEPTED = '.png,.jpg,.jpeg,.webp,.gif,.pdf,.doc,.docx,.txt';
-const ACCEPTED_TYPES = ['image/png','image/jpeg','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','text/plain'];
+const ACCEPTED = ".png,.jpg,.jpeg,.webp,.gif,.pdf,.doc,.docx,.txt";
+const ACCEPTED_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+];
 
 function fileIcon(file) {
-  if (!file) return '📄';
-  if (file.type.startsWith('image/')) return '🖼️';
-  if (file.type === 'application/pdf') return '📕';
-  if (file.type.includes('word')) return '📝';
-  return '📄';
+  if (!file) return "📄";
+  if (file.type.startsWith("image/")) return "🖼️";
+  if (file.type === "application/pdf") return "📕";
+  if (file.type.includes("word")) return "📝";
+  return "📄";
 }
 
 function fmtBytes(n) {
-  if (n < 1024) return n + ' B';
-  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
-  return (n/1048576).toFixed(1) + ' MB';
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(1) + " MB";
 }
 
-function uid() { return Math.random().toString(36).slice(2,9); }
+function uid() {
+  return Math.random().toString(36).slice(2, 9);
+}
 
-export function AIUploadModal({ matchType, dispatch, onClose, refData }) {
+export function AIUploadModal({
+  matchType,
+  dispatch,
+  onClose,
+  refData,
+  onSaved,
+  onAlert,
+}) {
   const [queue, setQueue] = useState([]);
   const queueRef = useRef([]);
   const [globalDrag, setGlobalDrag] = useState(false);
@@ -30,177 +48,598 @@ export function AIUploadModal({ matchType, dispatch, onClose, refData }) {
   const inputRef = useRef();
   const dragCount = useRef(0);
 
-  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
 
   const addFiles = useCallback((fileList) => {
     const incoming = Array.from(fileList)
-      .filter(f => ACCEPTED_TYPES.includes(f.type) || f.name.match(/\.(doc|docx|txt)$/i))
-      .map(f => ({ id:uid(), file:f, status:'idle', extracted:null, error:'' }));
+      .filter(
+        (f) =>
+          ACCEPTED_TYPES.includes(f.type) || f.name.match(/\.(doc|docx|txt)$/i),
+      )
+      .map((f) => ({
+        id: uid(),
+        file: f,
+        status: "idle",
+        extracted: null,
+        error: "",
+      }));
     if (!incoming.length) return;
-    setQueue(q => [...q, ...incoming]);
+    setQueue((q) => [...q, ...incoming]);
   }, []);
 
-  const removeItem = id => setQueue(q => q.filter(i => i.id !== id));
+  const removeItem = (id) => setQueue((q) => q.filter((i) => i.id !== id));
 
-  const onOverlayDragEnter = useCallback(e => { e.preventDefault(); dragCount.current++; setGlobalDrag(true); }, []);
-  const onOverlayDragLeave = useCallback(e => { e.preventDefault(); dragCount.current--; if (dragCount.current <= 0) { dragCount.current=0; setGlobalDrag(false); } }, []);
-  const onOverlayDragOver  = useCallback(e => { e.preventDefault(); }, []);
-  const onOverlayDrop      = useCallback(e => { e.preventDefault(); dragCount.current=0; setGlobalDrag(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }, [addFiles]);
+  const onOverlayDragEnter = useCallback((e) => {
+    e.preventDefault();
+    dragCount.current++;
+    setGlobalDrag(true);
+  }, []);
+  const onOverlayDragLeave = useCallback((e) => {
+    e.preventDefault();
+    dragCount.current--;
+    if (dragCount.current <= 0) {
+      dragCount.current = 0;
+      setGlobalDrag(false);
+    }
+  }, []);
+  const onOverlayDragOver = useCallback((e) => {
+    e.preventDefault();
+  }, []);
+  const onOverlayDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      dragCount.current = 0;
+      setGlobalDrag(false);
+      if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    },
+    [addFiles],
+  );
 
   useEffect(() => {
-    const h = e => {
+    const h = (e) => {
       const items = e.clipboardData?.items;
       if (!items) return;
       const imgs = [];
       for (const item of items) {
-        if (item.type.startsWith('image/')) {
+        if (item.type.startsWith("image/")) {
           const blob = item.getAsFile();
-          if (blob) { const ext = item.type.split('/')[1]||'png'; imgs.push(new File([blob], `pasted-${Date.now()}.${ext}`, { type:item.type })); }
+          if (blob) {
+            const ext = item.type.split("/")[1] || "png";
+            imgs.push(
+              new File([blob], `pasted-${Date.now()}.${ext}`, {
+                type: item.type,
+              }),
+            );
+          }
         }
       }
       if (imgs.length) addFiles(imgs);
     };
-    window.addEventListener('paste', h);
-    return () => window.removeEventListener('paste', h);
+    window.addEventListener("paste", h);
+    return () => window.removeEventListener("paste", h);
   }, [addFiles]);
 
-  const extractItem = useCallback(async id => {
-    setQueue(q => q.map(i => i.id===id ? {...i,status:'loading',error:''} : i));
-    try {
-      const item = queueRef.current.find(i => i.id===id);
-      const timelineDone = queueRef.current.find(i => i.id!==id && i.status==='done' && (i.extracted?.screenshotType==='timeline' || (i.playerAgentMap && i.playerAgentMap.length>0)));
-      const pamToSend = timelineDone?.playerAgentMap || timelineDone?.extracted?.playerAgentMap || null;
-      const result = await aiApi.extract(item.file, matchType, pamToSend);
-      setQueue(q => q.map(i => i.id===id ? {...i,status:'done',extracted:result.extracted,playerAgentMap:result.playerAgentMap||result.extracted?.playerAgentMap||[]} : i));
-    } catch (err) {
-      setQueue(q => q.map(i => i.id===id ? {...i,status:'error',error:err.message||'Extraction failed'} : i));
-    }
-  }, [queue, matchType]);
+  const extractItem = useCallback(
+    async (id) => {
+      setQueue((q) =>
+        q.map((i) =>
+          i.id === id ? { ...i, status: "loading", error: "" } : i,
+        ),
+      );
+      try {
+        const item = queueRef.current.find((i) => i.id === id);
+        const timelineDone = [...queueRef.current]
+          .reverse()
+          .find(
+            (i) =>
+              i.id !== id &&
+              i.status === "done" &&
+              (i.extracted?.screenshotType === "timeline" ||
+                (i.playerAgentMap && i.playerAgentMap.length > 0)),
+          );
+        const pamToSend =
+          timelineDone?.playerAgentMap ||
+          timelineDone?.extracted?.playerAgentMap ||
+          null;
+        const result = await aiApi.extract(item.file, matchType, pamToSend);
+        setQueue((q) =>
+          q.map((i) =>
+            i.id === id
+              ? {
+                  ...i,
+                  status: "done",
+                  extracted: result.extracted,
+                  playerAgentMap:
+                    result.playerAgentMap ||
+                    result.extracted?.playerAgentMap ||
+                    [],
+                }
+              : i,
+          ),
+        );
+      } catch (err) {
+        setQueue((q) =>
+          q.map((i) =>
+            i.id === id
+              ? {
+                  ...i,
+                  status: "error",
+                  error: err.message || "Extraction failed",
+                }
+              : i,
+          ),
+        );
+      }
+    },
+    [queue, matchType],
+  );
 
   const extractAll = useCallback(async () => {
-    const pending = queue.filter(i => i.status==='idle'||i.status==='error');
-    const sorted = [...pending.filter(i => i.extracted?.screenshotType==='timeline'), ...pending.filter(i => i.extracted?.screenshotType!=='timeline')];
+    const pending = queue.filter(
+      (i) => i.status === "idle" || i.status === "error",
+    );
+    // Prioritize likely Timeline files first so Scoreboard can receive playerAgentMap.
+    const isLikelyTimeline = (item) => {
+      const n = (item?.file?.name || "").toLowerCase();
+      return n.includes("timeline") || n.includes("tl");
+    };
+    const sorted = [...pending].sort((a, b) => {
+      const av = isLikelyTimeline(a) ? 0 : 1;
+      const bv = isLikelyTimeline(b) ? 0 : 1;
+      return av - bv;
+    });
     for (const item of sorted) await extractItem(item.id);
   }, [queue, extractItem]);
 
-  const pendingCount = queue.filter(i => i.status==='idle'||i.status==='error').length;
-  const doneCount    = queue.filter(i => i.status==='done').length;
-  const loadingCount = queue.filter(i => i.status==='loading').length;
+  const pendingCount = queue.filter(
+    (i) => i.status === "idle" || i.status === "error",
+  ).length;
+  const doneCount = queue.filter((i) => i.status === "done").length;
+  const loadingCount = queue.filter((i) => i.status === "loading").length;
+  const hasMinUploads = queue.length >= 2;
 
-  const doneTimeline   = queue.find(i => i.status==='done' && (i.extracted?.screenshotType==='timeline' || (i.playerAgentMap&&i.playerAgentMap.length>0) || (i.extracted?.playerAgentMap&&i.extracted.playerAgentMap.length>0)));
-  const doneScoreboard = queue.find(i => i.status==='done' && i.extracted?.screenshotType==='scoreboard');
-  const hasTimeline = !!doneTimeline, hasScoreboard = !!doneScoreboard;
-  const playerAgentCount = (doneTimeline?.playerAgentMap || doneTimeline?.extracted?.playerAgentMap || []).length;
+  // Use most recently completed items to avoid mixing older Timeline/Scoreboard pairs.
+  const doneTimeline = [...queue]
+    .reverse()
+    .find(
+      (i) =>
+        i.status === "done" &&
+        (i.extracted?.screenshotType === "timeline" ||
+          (i.playerAgentMap && i.playerAgentMap.length > 0) ||
+          (i.extracted?.playerAgentMap &&
+            i.extracted.playerAgentMap.length > 0)),
+    );
+  const doneSummary = [...queue]
+    .reverse()
+    .find((i) => i.status === "done" && i.extracted?.screenshotType === "summary");
+  const doneScoreboard = [...queue]
+    .reverse()
+    .find(
+      (i) =>
+        i.status === "done" && i.extracted?.screenshotType === "scoreboard",
+    );
+  const doneContext = doneSummary || doneTimeline;
+  const hasTimeline = !!doneTimeline,
+    hasSummary = !!doneSummary,
+    hasContext = !!doneContext,
+    hasScoreboard = !!doneScoreboard;
+  const playerAgentCount = (
+    doneTimeline?.playerAgentMap ||
+    doneTimeline?.extracted?.playerAgentMap ||
+    []
+  ).length;
 
-  const normalizeKey = name => (name||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const normalizeKey = (name) =>
+    (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
   const mergeAndReview = () => {
-    if (!doneTimeline || !doneScoreboard) return;
-    const pam = doneTimeline.playerAgentMap || doneTimeline.extracted?.playerAgentMap || [];
-    if (pam.length === 0) { alert('⚠️ Agent names could not be read from Timeline. Make sure a round is selected.'); return; }
-    const tmap = {}; pam.forEach(({player,agent}) => { if (player&&agent) tmap[normalizeKey(player)]=agent; });
-    const correctedPS = (doneScoreboard.extracted.playerStats||[]).map(p => { const k=normalizeKey(p.player); return tmap[k] ? {...p,agent:tmap[k]} : p; });
-    const merged = { ...doneScoreboard.extracted, playerStats:correctedPS, teamMetrics:{...doneScoreboard.extracted.teamMetrics,...doneTimeline.extracted.teamMetrics}, date:doneScoreboard.extracted.date||doneTimeline.extracted.date, map:doneScoreboard.extracted.map||doneTimeline.extracted.map, result:doneScoreboard.extracted.result||doneTimeline.extracted.result, score:doneScoreboard.extracted.score||doneTimeline.extracted.score };
-    setReviewItem({ extracted:merged, _merged:true });
+    if (!doneContext || !doneScoreboard) return;
+    const pam =
+      doneTimeline?.playerAgentMap ||
+      doneTimeline?.extracted?.playerAgentMap ||
+      [];
+    const tmap = {};
+    pam.forEach(({ player, agent }) => {
+      if (player && agent) tmap[normalizeKey(player)] = agent;
+    });
+
+    // Fuzzy match: find best PAM entry for a scoreboard player name.
+    // Uses longest-common-subsequence length as similarity score.
+    const lcsLength = (a, b) => {
+      const m = a.length,
+        n = b.length;
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 1; i <= m; i++)
+        for (let j = 1; j <= n; j++)
+          dp[i][j] =
+            a[i - 1] === b[j - 1]
+              ? dp[i - 1][j - 1] + 1
+              : Math.max(dp[i - 1][j], dp[i][j - 1]);
+      return dp[m][n];
+    };
+    const fuzzyFindAgent = (name) => {
+      const k = normalizeKey(name);
+      if (tmap[k]) return { agent: tmap[k], matchedKey: k }; // exact match first
+      // Find PAM entry with highest LCS similarity
+      let bestAgent = null,
+        bestKey = null,
+        bestScore = 0;
+      for (const [pamKey, agent] of Object.entries(tmap)) {
+        const shorter = Math.min(k.length, pamKey.length);
+        if (shorter === 0) continue;
+        const score = lcsLength(k, pamKey) / Math.max(k.length, pamKey.length);
+        if (score > bestScore && score >= 0.7) {
+          // 70% similarity threshold
+          bestScore = score;
+          bestAgent = agent;
+          bestKey = pamKey;
+        }
+      }
+      return { agent: bestAgent, matchedKey: bestKey };
+    };
+
+    const scoreboardStats = doneScoreboard.extracted.playerStats || [];
+    const usedPamKeys = new Set();
+    const correctedPS = scoreboardStats.map((p) => {
+      const { agent, matchedKey } = fuzzyFindAgent(p.player);
+      if (matchedKey) usedPamKeys.add(matchedKey);
+      return agent ? { ...p, agent } : p;
+    });
+
+    // Backfill only Timeline players that were NOT matched to any scoreboard row.
+    const backfilled = [...correctedPS];
+    for (const row of pam) {
+      const name = row?.player || "";
+      const key = normalizeKey(name);
+      if (!name || usedPamKeys.has(key)) continue;
+      // Also skip if scoreboard already has a fuzzy match to this PAM entry
+      const alreadyCovered = correctedPS.some(
+        (p) =>
+          normalizeKey(p.player) === key ||
+          fuzzyFindAgent(p.player).matchedKey === key,
+      );
+      if (alreadyCovered) continue;
+      backfilled.push({
+        player: name,
+        agent: row?.agent || "Jett",
+        acs: null,
+        kills: null,
+        deaths: null,
+        assists: null,
+        adr: null,
+        kast: null,
+        fkRate: null,
+        clutchRate: null,
+        firstBloods: 0,
+        plants: 0,
+        defuses: 0,
+      });
+    }
+
+    const merged = {
+      ...doneScoreboard.extracted,
+      playerStats: pam.length > 0 ? backfilled : scoreboardStats,
+      playerAgentMap: pam,
+      teamMetrics: {
+        ...doneScoreboard.extracted.teamMetrics,
+        ...doneContext.extracted.teamMetrics,
+      },
+      date: doneScoreboard.extracted.date || doneContext.extracted.date,
+      map: doneScoreboard.extracted.map || doneContext.extracted.map,
+      result: doneScoreboard.extracted.result || doneContext.extracted.result,
+      score: doneScoreboard.extracted.score || doneContext.extracted.score,
+    };
+    setReviewItem({ extracted: merged, _merged: true });
   };
 
-  if (reviewItem) return <MatchForm dispatch={dispatch} onClose={() => setReviewItem(null)} prefill={reviewItem.extracted} refData={refData} />;
+  if (reviewItem) {
+    return (
+      <MatchForm
+        dispatch={dispatch}
+        onClose={() => setReviewItem(null)}
+        onAlert={onAlert}
+        onSaved={(created) => {
+          if (onSaved) onSaved(created);
+          onClose();
+        }}
+        prefill={reviewItem.extracted}
+        refData={refData}
+      />
+    );
+  }
 
   return (
     <div
       className="modal-overlay"
-      style={{ background: globalDrag ? 'rgba(232,37,60,0.12)' : 'rgba(0,0,0,0.75)', outline: globalDrag ? '3px dashed var(--red)' : 'none', outlineOffset:-6 }}
-      onDragEnter={onOverlayDragEnter} onDragLeave={onOverlayDragLeave} onDragOver={onOverlayDragOver} onDrop={onOverlayDrop}
+      style={{
+        background: globalDrag ? "rgba(232,37,60,0.12)" : "rgba(0,0,0,0.75)",
+        outline: globalDrag ? "3px dashed var(--red)" : "none",
+        outlineOffset: -6,
+      }}
+      onDragEnter={onOverlayDragEnter}
+      onDragLeave={onOverlayDragLeave}
+      onDragOver={onOverlayDragOver}
+      onDrop={onOverlayDrop}
     >
       {globalDrag ? (
-        <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:12,pointerEvents:'none' }}>
-          <div style={{ fontSize:64 }}>📂</div>
-          <div style={{ fontSize:28,fontWeight:900,letterSpacing:'0.1em',color:'#fff' }}>DROP FILES ANYWHERE</div>
-          <div style={{ fontSize:11,color:'rgba(255,255,255,0.5)',fontFamily:'var(--mono)',letterSpacing:'0.1em' }}>PNG · JPG · WEBP · PDF · DOC · TXT</div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 12,
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{ fontSize: 64 }}>📂</div>
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 900,
+              letterSpacing: "0.1em",
+              color: "#fff",
+            }}
+          >
+            DROP FILES ANYWHERE
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(255,255,255,0.5)",
+              fontFamily: "var(--mono)",
+              letterSpacing: "0.1em",
+            }}
+          >
+            PNG · JPG · WEBP · PDF · DOC · TXT
+          </div>
         </div>
       ) : (
-        <div className="modal-box" style={{ maxWidth:560 }} onClick={e=>e.stopPropagation()}>
+        <div
+          className="modal-box"
+          style={{ maxWidth: 560 }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="modal-head">
-            <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-              <div style={{ fontSize:18,fontWeight:900,letterSpacing:'0.08em',textTransform:'uppercase' }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
                 ✦ AI Match Import
               </div>
-              <span style={{ background:'var(--red)',color:'#fff',padding:'3px 10px',borderRadius:4,fontSize:10,fontWeight:800,letterSpacing:'0.1em' }}>{matchType.toUpperCase()}</span>
+              <span
+                style={{
+                  background: "var(--red)",
+                  color: "#fff",
+                  padding: "3px 10px",
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.1em",
+                }}
+              >
+                {matchType.toUpperCase()}
+              </span>
             </div>
-            <button className="modal-close" onClick={onClose}>✕</button>
+            <button className="modal-close" onClick={onClose}>
+              ✕
+            </button>
           </div>
 
-          <div style={{ padding:24, overflowY:'auto', flexGrow:1 }}>
-            <div className="drop-zone" onClick={() => inputRef.current?.click()}>
-              <div style={{ fontSize:36,marginBottom:10 }}>📂</div>
-              <div style={{ fontSize:15,fontWeight:700,letterSpacing:'0.05em',marginBottom:4 }}>
+          <div style={{ padding: 24, overflowY: "auto", flexGrow: 1 }}>
+            <div
+              className="drop-zone"
+              onClick={() => inputRef.current?.click()}
+            >
+              <div style={{ fontSize: 36, marginBottom: 10 }}>📂</div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  marginBottom: 4,
+                }}
+              >
                 Click to browse or drag files anywhere
               </div>
-              <div style={{ fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',letterSpacing:'0.08em' }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--text3)",
+                  fontFamily: "var(--mono)",
+                  letterSpacing: "0.08em",
+                }}
+              >
                 PNG · JPG · WEBP · PDF · DOC · TXT
               </div>
-              <div style={{ fontSize:10,color:'var(--red)',marginTop:6,fontFamily:'var(--mono)',letterSpacing:'0.06em' }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--red)",
+                  marginTop: 6,
+                  fontFamily: "var(--mono)",
+                  letterSpacing: "0.06em",
+                }}
+              >
                 ⌘V / CTRL+V to paste screenshot
               </div>
-              <input ref={inputRef} type="file" accept={ACCEPTED} multiple style={{ display:'none' }} onChange={e=>addFiles(e.target.files)} />
+              <input
+                ref={inputRef}
+                type="file"
+                accept={ACCEPTED}
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => addFiles(e.target.files)}
+              />
             </div>
 
-            {queue.length > 0 && queue.map(item => (
-              <div key={item.id} className={`queue-item ${item.status}`}>
-                <span style={{ fontSize:20 }}>{fileIcon(item.file)}</span>
-                <div style={{ flexGrow:1,minWidth:0 }}>
-                  <div style={{ fontSize:13,fontWeight:700,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>
-                    {item.file.name}
-                    {item.status==='done' && item.extracted?.screenshotType && (
-                      <span style={{ marginLeft:8,fontSize:9,fontWeight:800,letterSpacing:'0.08em',padding:'1px 6px',borderRadius:4, background:item.extracted.screenshotType==='timeline'?'rgba(167,139,250,0.15)':'rgba(56,189,248,0.15)', color:item.extracted.screenshotType==='timeline'?'var(--violet)':'var(--sky)' }}>
-                        {item.extracted.screenshotType.toUpperCase()}
-                      </span>
+            {queue.length > 0 &&
+              queue.map((item) => (
+                <div key={item.id} className={`queue-item ${item.status}`}>
+                  <span style={{ fontSize: 20 }}>{fileIcon(item.file)}</span>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {item.file.name}
+                      {item.status === "done" &&
+                        item.extracted?.screenshotType && (
+                          <span
+                            style={{
+                              marginLeft: 8,
+                              fontSize: 9,
+                              fontWeight: 800,
+                              letterSpacing: "0.08em",
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              background:
+                                item.extracted.screenshotType === "timeline"
+                                  ? "rgba(167,139,250,0.15)"
+                                  : "rgba(56,189,248,0.15)",
+                              color:
+                                item.extracted.screenshotType === "timeline"
+                                  ? "var(--violet)"
+                                  : "var(--sky)",
+                            }}
+                          >
+                            {item.extracted.screenshotType.toUpperCase()}
+                          </span>
+                        )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--text3)",
+                        fontFamily: "var(--mono)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {fmtBytes(item.file.size)}
+                      {item.status === "done" &&
+                        item.extracted &&
+                        ` · ${item.extracted.map || "?"} · ${item.extracted.result || "?"} ${item.extracted.score || ""}`}
+                      {item.status === "error" && (
+                        <span style={{ color: "var(--red)" }}>
+                          {" "}
+                          · {item.error}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: "0.08em",
+                      flexShrink: 0,
+                      color:
+                        item.status === "done"
+                          ? "var(--emerald)"
+                          : item.status === "error"
+                            ? "var(--red)"
+                            : item.status === "loading"
+                              ? "var(--red)"
+                              : "var(--text3)",
+                    }}
+                  >
+                    {item.status === "idle" && "PENDING"}
+                    {item.status === "loading" && (
+                      <span className="spin">▲</span>
                     )}
-                  </div>
-                  <div style={{ fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2 }}>
-                    {fmtBytes(item.file.size)}
-                    {item.status==='done'&&item.extracted && ` · ${item.extracted.map||'?'} · ${item.extracted.result||'?'} ${item.extracted.score||''}`}
-                    {item.status==='error' && <span style={{ color:'var(--red)' }}> · {item.error}</span>}
-                  </div>
+                    {item.status === "done" && "✓"}
+                    {item.status === "error" && "✕"}
+                  </span>
+
+                  {item.status !== "loading" && (
+                    <button
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--text3)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        padding: "0 2px",
+                      }}
+                      onClick={() => removeItem(item.id)}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-
-                <span style={{ fontSize:10,fontWeight:800,letterSpacing:'0.08em',flexShrink:0, color:item.status==='done'?'var(--emerald)':item.status==='error'?'var(--red)':item.status==='loading'?'var(--red)':'var(--text3)' }}>
-                  {item.status==='idle'&&'PENDING'}
-                  {item.status==='loading'&&<span className="spin">▲</span>}
-                  {item.status==='done'&&'✓'}
-                  {item.status==='error'&&'✕'}
-                </span>
-
-                {item.status==='done'&&item.extracted?.screenshotType==='timeline'&&(
-                  <button className="btn-primary" style={{ fontSize:10,padding:'4px 10px' }} onClick={() => { const pam=item.playerAgentMap||item.extracted?.playerAgentMap||[]; setReviewItem({...item,extracted:{...item.extracted,playerAgentMap:pam}}); }}>
-                    Review →
-                  </button>
-                )}
-
-                {item.status!=='loading'&&(
-                  <button style={{ background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:14,padding:'0 2px' }} onClick={() => removeItem(item.id)}>✕</button>
-                )}
-              </div>
-            ))}
+              ))}
           </div>
 
-          <div className="form-actions" style={{ justifyContent:'space-between' }}>
-            <span style={{ fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)' }}>
-              {queue.length===0 ? 'Upload Scoreboard + Timeline to import'
-                : hasTimeline&&hasScoreboard ? `✓ Ready · ${playerAgentCount} agents mapped`
-                : hasScoreboard&&!hasTimeline ? '⚠ Upload Timeline for agent names'
-                : hasTimeline&&!hasScoreboard ? '⚠ Upload Scoreboard for player stats'
-                : `${queue.length} file${queue.length!==1?'s':''} · ${doneCount} done`}
+          <div
+            className="form-actions"
+            style={{ justifyContent: "space-between" }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text3)",
+                fontFamily: "var(--mono)",
+              }}
+            >
+              {queue.length === 0
+                ? "Upload SUMMARY and SCOREBOARD images to import"
+                : !hasMinUploads
+                  ? "⚠ Upload both SUMMARY and SCOREBOARD images"
+                  : hasContext && hasScoreboard
+                    ? hasSummary
+                      ? "✓ Ready · Summary + Scoreboard linked"
+                      : `✓ Ready · ${playerAgentCount} agents mapped`
+                    : hasScoreboard && !hasContext
+                      ? "⚠ Upload Summary for match details"
+                      : hasContext && !hasScoreboard
+                        ? "⚠ Upload Scoreboard for player stats"
+                        : `${queue.length} file${queue.length !== 1 ? "s" : ""} · ${doneCount} done`}
             </span>
-            <div style={{ display:'flex',gap:8 }}>
-              <button className="btn-secondary" onClick={onClose}>Close</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn-secondary" onClick={onClose}>
+                Close
+              </button>
               {pendingCount > 0 && (
-                <button className="btn-primary" disabled={loadingCount>0} style={{ opacity:loadingCount>0?0.6:1 }} onClick={extractAll}>
-                  {loadingCount>0 ? 'Analyzing…' : `✦ Extract${pendingCount>1?` All ${pendingCount}`:''}`}
+                <button
+                  className="btn-primary"
+                  disabled={loadingCount > 0 || !hasMinUploads}
+                  style={{
+                    opacity: loadingCount > 0 || !hasMinUploads ? 0.6 : 1,
+                  }}
+                  onClick={() => {
+                    if (!hasMinUploads) {
+                      const msg =
+                        "Please upload both SUMMARY and SCOREBOARD images before extracting.";
+                      if (onAlert) onAlert(msg, "Two Images Required");
+                      else alert(msg);
+                      return;
+                    }
+                    extractAll();
+                  }}
+                >
+                  {loadingCount > 0
+                    ? "Analyzing…"
+                    : !hasMinUploads
+                      ? "Upload Summary + Scoreboard"
+                      : `✦ Extract${pendingCount > 1 ? ` All ${pendingCount}` : ""}`}
                 </button>
               )}
-              {hasTimeline&&hasScoreboard&&(
-                <button className="btn-primary" onClick={mergeAndReview}>✦ Review →</button>
+              {hasContext && hasScoreboard && (
+                <button className="btn-primary" onClick={mergeAndReview}>
+                  ✦ Review →
+                </button>
               )}
             </div>
           </div>

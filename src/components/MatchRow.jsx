@@ -44,7 +44,7 @@ export function MatchRow({ match, onDelete }) {
             : <span className="type-badge" style={{ background: 'var(--s3)', color: 'var(--text3)' }}>SCRIM</span>
           }
           {onDelete && (
-            <button className="del-btn" onClick={e => { e.stopPropagation(); if (window.confirm('Delete this match?')) onDelete(match.id); }}>
+            <button className="del-btn" onClick={e => { e.stopPropagation(); onDelete(match.id); }}>
               ✕
             </button>
           )}
@@ -55,3 +55,4 @@ export function MatchRow({ match, onDelete }) {
     </>
   );
 }
+
