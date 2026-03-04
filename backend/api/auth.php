@@ -161,7 +161,18 @@ function getFrontendBaseUrl(): string
         $url = trim((string)(vtEnv('FRONTEND_BASE_URL', '') ?? ''));
         if ($url !== '') return rtrim($url, '/');
     }
-    return 'http://localhost:3002';
+
+    $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+    if ($origin !== '') {
+        return rtrim($origin, '/');
+    }
+
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? '') === '443')
+        || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
+    $scheme = $isHttps ? 'https' : 'http';
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    return $scheme . '://' . $host;
 }
 
 function sendResetEmail(string $to, string $link): bool
