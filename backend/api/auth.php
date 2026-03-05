@@ -11,42 +11,48 @@ require_once __DIR__ . '/../helpers/response.php';
 require_once __DIR__ . '/../helpers/auth.php';
 
 setCorsHeaders();
+try {
+    $db = getDB();
+    ensureAuthSchema($db);
 
-$db = getDB();
-ensureAuthSchema($db);
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $action = $_GET['action'] ?? '';
 
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$action = $_GET['action'] ?? '';
+    if ($method === 'GET' && $action === 'me') {
+        handleMe($db);
+    }
+    if ($method === 'POST' && $action === 'register') {
+        sendError('Self-registration is disabled. Ask a superadmin to create your account.', 403);
+    }
+    if ($method === 'POST' && $action === 'login') {
+        handleLogin($db);
+    }
+    if ($method === 'POST' && $action === 'logout') {
+        handleLogout();
+    }
+    if ($method === 'POST' && $action === 'forgot') {
+        handleForgotPassword($db);
+    }
+    if ($method === 'POST' && $action === 'reset') {
+        handleResetPassword($db);
+    }
+    if ($method === 'POST' && $action === 'change_password') {
+        handleChangePassword($db);
+    }
+    if ($method === 'POST' && $action === 'update_profile') {
+        handleUpdateProfile($db);
+    }
+    if ($method === 'POST' && $action === 'setup_team') {
+        handleSetupTeam($db);
+    }
 
-if ($method === 'GET' && $action === 'me') {
-    handleMe($db);
+    sendError('Not found', 404);
+} catch (Throwable $e) {
+    error_log('auth.php fatal: ' . $e->getMessage());
+    $isProd = function_exists('vtEnvBool') ? vtEnvBool('IS_PRODUCTION', false) : true;
+    $msg = $isProd ? 'Internal server error' : ('Internal server error: ' . $e->getMessage());
+    sendError($msg, 500);
 }
-if ($method === 'POST' && $action === 'register') {
-    sendError('Self-registration is disabled. Ask a superadmin to create your account.', 403);
-}
-if ($method === 'POST' && $action === 'login') {
-    handleLogin($db);
-}
-if ($method === 'POST' && $action === 'logout') {
-    handleLogout();
-}
-if ($method === 'POST' && $action === 'forgot') {
-    handleForgotPassword($db);
-}
-if ($method === 'POST' && $action === 'reset') {
-    handleResetPassword($db);
-}
-if ($method === 'POST' && $action === 'change_password') {
-    handleChangePassword($db);
-}
-if ($method === 'POST' && $action === 'update_profile') {
-    handleUpdateProfile($db);
-}
-if ($method === 'POST' && $action === 'setup_team') {
-    handleSetupTeam($db);
-}
-
-sendError('Not found', 404);
 
 function ensureAuthSchema(PDO $db): void
 {

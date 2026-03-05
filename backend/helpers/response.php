@@ -5,6 +5,22 @@
 
 declare(strict_types=1);
 
+function normalizeCorsOrigin(string $origin): string
+{
+    $origin = trim($origin);
+    if ($origin === '') return '';
+
+    $parts = @parse_url($origin);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+        return rtrim($origin, '/');
+    }
+
+    $scheme = strtolower((string)$parts['scheme']);
+    $host = strtolower((string)$parts['host']);
+    $port = isset($parts['port']) ? ':' . (int)$parts['port'] : '';
+    return $scheme . '://' . $host . $port;
+}
+
 function getAllowedCorsOrigins(): array
 {
     $raw = '';
@@ -15,12 +31,16 @@ function getAllowedCorsOrigins(): array
     }
 
     $parts = array_filter(array_map('trim', explode(',', $raw)));
-    return array_values($parts);
+    $normalized = array_map('normalizeCorsOrigin', $parts);
+    $normalized = array_filter($normalized, static fn($v) => $v !== '');
+    return array_values(array_unique($normalized));
 }
 
 function setCorsHeadersForRequest(): void
 {
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $originHeader = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+    if ($originHeader === '') return;
+    $origin = normalizeCorsOrigin($originHeader);
     if ($origin === '') return;
 
     $allowed = getAllowedCorsOrigins();

@@ -22,12 +22,16 @@ export function PlayerCard({
   };
 
   const stats = {
-    acs: avg(rows.map((r) => num(r.acs))),
-    kd: avg(rows.map((r) => num(r.kd))),
-    kills: avg(rows.map((r) => num(r.kills))),
-    deaths: avg(rows.map((r) => num(r.deaths))),
-    assists: avg(rows.map((r) => num(r.assists))),
-    fb: avg(rows.map((r) => num(r.fb))),
+    acs: avg(rows.map((r) => r.acs)),
+    kd: avg(rows.map((r) => r.kd)),
+    kills: avg(rows.map((r) => r.kills)),
+    deaths: avg(rows.map((r) => r.deaths)),
+    assists: avg(rows.map((r) => r.assists)),
+    firstBloods: avg(
+      rows.map((r) =>
+        Number(r.first_bloods ?? r.firstBloods ?? r.first_kills ?? 0),
+      ),
+    ),
   };
   const agents = [...new Set(rows.map((r) => r.agent))];
   const subTitle = isPerMatchCard
@@ -46,7 +50,12 @@ export function PlayerCard({
     { label: "KILLS", val: fmt(stats.kills), hi: false, warn: false },
     { label: "DEATHS", val: fmt(stats.deaths), hi: false, warn: false },
     { label: "ASSISTS", val: fmt(stats.assists), hi: false, warn: false },
-    { label: "FB", val: fmt(stats.fb), hi: false, warn: false },
+    {
+      label: "FB",
+      val: fmt(stats.firstBloods),
+      hi: false,
+      warn: false,
+    },
   ];
   const lastRowStart = Math.floor((chips.length - 1) / 3) * 3;
 
@@ -163,4 +172,3 @@ export function PlayerCard({
     </div>
   );
 }
-

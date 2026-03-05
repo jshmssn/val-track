@@ -906,17 +906,17 @@ export default function App() {
                         : mapNames.length > 1
                           ? "Mixed"
                           : "-";
-                    const dates = [
+                    const matchDates = [
                       ...new Set(
                         cards
                           .map((c) => (c.match?.date || "").trim())
                           .filter(Boolean),
                       ),
-                    ];
+                    ].sort((a, b) => b.localeCompare(a));
                     const dateLabel =
-                      dates.length === 1
-                        ? dates[0]
-                        : dates.length > 1
+                      matchDates.length === 1
+                        ? matchDates[0]
+                        : matchDates.length > 1
                           ? "Mixed"
                           : "-";
                     return (

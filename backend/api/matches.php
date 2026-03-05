@@ -207,8 +207,8 @@ function createMatch(): void
 
             $db->prepare("
                 INSERT INTO player_match_stats
-                    (id, match_id, player_id, agent_id, acs, kills, deaths, assists, fb,
-                     adr, kast_pct, fk_rate, clutch_rate)
+                    (id, match_id, player_id, agent_id, acs, kills, deaths, assists,
+                     adr, kast_pct, fk_rate, clutch_rate, first_kills)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ")->execute([
                 uuid(),
@@ -224,6 +224,7 @@ function createMatch(): void
                 $ps['kast']   ?? 0,
                 $ps['fkRate'] ?? null,
                 $ps['clutchRate'] ?? null,
+                $ps['first_bloods'] ?? ($ps['firstBloods'] ?? null),
             ]);
         }
     }
@@ -404,7 +405,8 @@ function getPlayerStatsForMatch(PDO $db, string $matchId): array
             pms.kast_pct AS kast,
             pms.fk_rate AS fkRate,
             pms.clutch_rate AS clutchRate,
-            pms.kills, pms.deaths, pms.assists, pms.fb
+            pms.first_kills AS first_bloods,
+            pms.kills, pms.deaths, pms.assists
         FROM player_match_stats pms
         JOIN players p ON pms.player_id = p.id
         JOIN agents  a ON pms.agent_id  = a.id

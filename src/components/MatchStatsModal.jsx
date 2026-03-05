@@ -86,12 +86,13 @@ export function MatchStatsModal({ match, onClose }) {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ ...styles.table, minWidth: 860 }}>
                 <colgroup>
-                  <col style={{ width: '38%' }} />
-                  <col style={{ width: '20%' }} />
-                  <col style={{ width: '10.5%' }} />
-                  <col style={{ width: '10.5%' }} />
-                  <col style={{ width: '10.5%' }} />
-                  <col style={{ width: '10.5%' }} />
+                  <col style={{ width: '34%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '9.5%' }} />
+                  <col style={{ width: '9.5%' }} />
+                  <col style={{ width: '9.5%' }} />
+                  <col style={{ width: '9.5%' }} />
+                  <col style={{ width: '10%' }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -101,6 +102,7 @@ export function MatchStatsModal({ match, onClose }) {
                     <th style={{ ...thBase, textAlign: 'center', color: 'var(--emerald)' }}>K</th>
                     <th style={{ ...thBase, textAlign: 'center', color: 'var(--red)' }}>D</th>
                     <th style={{ ...thBase, textAlign: 'center' }}>A</th>
+                    <th style={{ ...thBase, textAlign: 'center' }}>FB</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -108,6 +110,7 @@ export function MatchStatsModal({ match, onClose }) {
                     const kills = ps.kills || 0;
                     const deaths = ps.deaths || 0;
                     const assists = ps.assists || 0;
+                    const firstBloods = ps.first_bloods ?? ps.firstBloods ?? ps.first_kills ?? 0;
                     return (
                       <tr key={ps.player} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
                         <td style={{ ...tdBase, fontWeight: 800, fontSize: 16 }}>{ps.player}</td>
@@ -129,6 +132,7 @@ export function MatchStatsModal({ match, onClose }) {
                         <td style={{ ...tdBase, textAlign: 'center', fontWeight: 800, fontSize: 16, color: 'var(--emerald)' }}>{kills}</td>
                         <td style={{ ...tdBase, textAlign: 'center', fontWeight: 800, fontSize: 16, color: 'var(--red)' }}>{deaths}</td>
                         <td style={{ ...tdBase, textAlign: 'center', fontWeight: 800, fontSize: 16, color: 'var(--text3)' }}>{assists}</td>
+                        <td style={{ ...tdBase, textAlign: 'center', fontWeight: 800, fontSize: 16 }}>{firstBloods}</td>
                       </tr>
                     );
                   })}

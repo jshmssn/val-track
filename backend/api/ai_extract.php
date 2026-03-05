@@ -483,12 +483,13 @@ For each extracted player, read:
 - agent: agent name TEXT shown under the player name (do not guess from the icon)
 - acs: number in AVG COMBAT SCORE column
 - kills, deaths, assists: from the KDA column formatted like "K / D / A"
+- first_bloods: integer from the FIRST BLOODS column
 - map: read map from top-left header line formatted like "MAP - BIND" (return only the map name, e.g. "Bind")
 
 IGNORE:
 - rank icons
 - agent icons
-- econ, first bloods, plants, defuses and any other columns
+- econ, plants, defuses and any other columns
 
 Valid agents: {$agentsJson}
 
@@ -501,7 +502,7 @@ Return ONLY valid JSON:
   "result": "Win or Loss or null",
   "score": "14-12 or null",
   "playerStats": [
-    {"player":"NAME","agent":"AGENT","acs":296,"kills":26,"deaths":22,"assists":5}
+    {"player":"NAME","agent":"AGENT","acs":296,"kills":26,"deaths":22,"assists":5, "first_bloods": 3}
   ],
   "confidence": "high|medium|low",
   "notes": ""
@@ -511,6 +512,7 @@ CRITICAL RULES:
 - Extract exactly 5 teal/green players.
 - Agent must come from the TEXT label under the player name.
 - KDA must be parsed into kills/deaths/assists integers.
+- FIRST BLOODS must be parsed from the FIRST BLOODS column.
 - Always prioritize the top-left "MAP - <name>" label for map.
 SCOREBOARD);
 
@@ -534,18 +536,20 @@ foreach ($rows as $r) {
 
     $agent  = validateAgentName($r['agent'] ?? null, $dbAgentList);
 
-    $acs     = isset($r['acs']) ? (int)$r['acs'] : null;
-    $kills   = isset($r['kills']) ? (int)$r['kills'] : null;
-    $deaths  = isset($r['deaths']) ? (int)$r['deaths'] : null;
-    $assists = isset($r['assists']) ? (int)$r['assists'] : null;
+    $acs          = isset($r['acs']) ? (int)$r['acs'] : null;
+    $kills        = isset($r['kills']) ? (int)$r['kills'] : null;
+    $deaths       = isset($r['deaths']) ? (int)$r['deaths'] : null;
+    $assists      = isset($r['assists']) ? (int)$r['assists'] : null;
+    $first_bloods = isset($r['first_bloods']) ? (int)$r['first_bloods'] : null;
 
-    $cleanStats[] = [
-        'player'  => $player,
-        'agent'   => $agent,
-        'acs'     => $acs,
-        'kills'   => $kills,
-        'deaths'  => $deaths,
-        'assists' => $assists,
+    $cleanStats[]      = [
+        'player'       => $player,
+        'agent'        => $agent,
+        'acs'          => $acs,
+        'kills'        => $kills,
+        'deaths'       => $deaths,
+        'assists'      => $assists,
+        'first_bloods' => $first_bloods,
     ];
 
     if (count($cleanStats) >= 5) break;
@@ -581,6 +585,6 @@ sendSuccess([
     'extractorBuild'  => $EXTRACTOR_BUILD,
     'processingSteps' => [
         'step1_tabDetection' => 'Detected: Scoreboard tab',
-        'step2_extraction'   => 'Extracted 5 teal players: player, agent(text), ACS, K/D/A',
+        'step2_extraction'   => 'Extracted 5 teal players: player, agent(text), ACS, K/D/A, first_bloods',
     ],
 ]);
