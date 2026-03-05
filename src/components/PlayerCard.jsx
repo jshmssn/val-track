@@ -23,13 +23,12 @@ export function PlayerCard({
     kills: avg(rows.map((r) => r.kills)),
     deaths: avg(rows.map((r) => r.deaths)),
     assists: avg(rows.map((r) => r.assists)),
+    firstBloods: avg(
+      rows.map((r) =>
+        Number(r.first_bloods ?? r.firstBloods ?? r.first_kills ?? 0),
+      ),
+    ),
   };
-  const latestDate = isPerMatchCard
-    ? matchMeta?.date || "-"
-    : [...matches]
-        .filter((m) => (m.playerStats || []).some((ps) => ps.player === player))
-        .map((m) => m.date)
-        .sort((a, b) => b.localeCompare(a))[0] || "-";
   const agents = [...new Set(rows.map((r) => r.agent))];
   const subTitle = isPerMatchCard
     ? rows[0]?.agent || "-"
@@ -48,11 +47,10 @@ export function PlayerCard({
     { label: "DEATHS", val: fmt(stats.deaths), hi: false, warn: false },
     { label: "ASSISTS", val: fmt(stats.assists), hi: false, warn: false },
     {
-      label: "DATE",
-      val: latestDate,
+      label: "FB",
+      val: fmt(stats.firstBloods),
       hi: false,
       warn: false,
-      compact: true,
     },
   ];
 
@@ -166,4 +164,3 @@ export function PlayerCard({
     </div>
   );
 }
-

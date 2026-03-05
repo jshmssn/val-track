@@ -27,6 +27,7 @@ function buildBlank(playerNames) {
       kast: "",
       fkRate: "",
       clutchRate: "",
+      first_bloods: "",
     })),
     teamMetrics: {
       atkRounds: "",
@@ -92,6 +93,7 @@ export function MatchForm({
       kast: "",
       fkRate: "",
       clutchRate: "",
+      first_bloods: "",
     });
     const ps =
       extractedStats.length > 0
@@ -108,6 +110,8 @@ export function MatchForm({
               fkRate: s.fkRate != null ? +(s.fkRate * 100).toFixed(0) : "",
               clutchRate:
                 s.clutchRate != null ? +(s.clutchRate * 100).toFixed(0) : "",
+              first_bloods:
+                s.first_bloods ?? s.firstBloods ?? s.first_kills ?? "",
             })),
           )
         : agentMap.length > 0
@@ -196,6 +200,7 @@ export function MatchForm({
           kills: +ps.kills,
           deaths: +ps.deaths,
           assists: +ps.assists,
+          first_bloods: +ps.first_bloods,
           adr: +ps.adr,
           kast: +ps.kast,
           fkRate: +(+ps.fkRate / 100).toFixed(2),
@@ -299,7 +304,7 @@ export function MatchForm({
             <table style={styles.table}>
               <thead>
                 <tr>
-                  {["Player", "Agent", "ACS", "K", "D", "A"].map((h) => (
+                  {["Player", "Agent", "ACS", "K", "D", "A", "FB"].map((h) => (
                     <th key={h} style={styles.th}>
                       {h}
                     </th>
@@ -333,7 +338,7 @@ export function MatchForm({
                         ))}
                       </select>
                     </td>
-                    {["acs", "kills", "deaths", "assists"].map((k) => (
+                    {["acs", "kills", "deaths", "assists", "first_bloods"].map((k) => (
                       <td key={k} style={styles.td}>
                         <input
                           className="inline-input"

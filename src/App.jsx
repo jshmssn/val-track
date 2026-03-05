@@ -906,12 +906,26 @@ export default function App() {
                         : mapNames.length > 1
                           ? "Mixed"
                           : "-";
+                    const matchDates = [
+                      ...new Set(
+                        cards
+                          .map((c) => (c.match?.date || "").trim())
+                          .filter(Boolean),
+                      ),
+                    ].sort((a, b) => b.localeCompare(a));
+                    const dateLabel =
+                      matchDates.length === 1
+                        ? matchDates[0]
+                        : matchDates.length > 1
+                          ? "Mixed"
+                          : "-";
                     return (
                       <section key={opponent} className="opponent-group">
                         <div className="opponent-separator">
                           <span className="opponent-vs">VS</span>
                           <span className="opponent-name">{opponent}</span>
                           <span className="opponent-map">MAP: {mapLabel}</span>
+                          <span className="opponent-map">DATE: {dateLabel}</span>
                         </div>
                         <div className="players-grid">
                           {cards.map((card) => (

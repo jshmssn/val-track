@@ -32,12 +32,15 @@ module.exports = function (app) {
       .toLowerCase(),
   );
 
+  // Local CRA proxy should default to local Apache.
+  // If you want zrok while developing, explicitly set BACKEND_PROXY_TARGET.
+  const localDefaultTarget = "http://localhost/val-track/backend";
+  const prodDefaultTarget = "https://vl-trck.shares.zrok.io";
+
   const target =
     process.env.BACKEND_PROXY_TARGET ||
     backendEnv.BACKEND_PROXY_TARGET ||
-    (isProduction
-      ? "https://vl-trck.shares.zrok.io/val-track/backend"
-      : "http://localhost/val-track/backend");
+    (isProduction ? prodDefaultTarget : localDefaultTarget);
 
   // Frontend may call either /backend/api/* or /val-track/backend/api/*.
   // CRA dev server forwards both to the configured backend target.
