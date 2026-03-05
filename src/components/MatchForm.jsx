@@ -23,6 +23,7 @@ function buildBlank(playerNames) {
       kills: "",
       deaths: "",
       assists: "",
+      fb: "",
       adr: "",
       kast: "",
       fkRate: "",
@@ -88,6 +89,7 @@ export function MatchForm({
       kills: "",
       deaths: "",
       assists: "",
+      fb: "",
       adr: "",
       kast: "",
       fkRate: "",
@@ -103,6 +105,7 @@ export function MatchForm({
               kills: s.kills ?? "",
               deaths: s.deaths ?? "",
               assists: s.assists ?? "",
+              fb: s.fb ?? s.firstBloods ?? "",
               adr: s.adr ?? "",
               kast: s.kast ?? "",
               fkRate: s.fkRate != null ? +(s.fkRate * 100).toFixed(0) : "",
@@ -196,6 +199,7 @@ export function MatchForm({
           kills: +ps.kills,
           deaths: +ps.deaths,
           assists: +ps.assists,
+          fb: +ps.fb,
           adr: +ps.adr,
           kast: +ps.kast,
           fkRate: +(+ps.fkRate / 100).toFixed(2),
@@ -299,7 +303,7 @@ export function MatchForm({
             <table style={styles.table}>
               <thead>
                 <tr>
-                  {["Player", "Agent", "ACS", "K", "D", "A"].map((h) => (
+                  {["Player", "Agent", "ACS", "K", "D", "A", "FB"].map((h) => (
                     <th key={h} style={styles.th}>
                       {h}
                     </th>
@@ -333,7 +337,7 @@ export function MatchForm({
                         ))}
                       </select>
                     </td>
-                    {["acs", "kills", "deaths", "assists"].map((k) => (
+                    {["acs", "kills", "deaths", "assists", "fb"].map((k) => (
                       <td key={k} style={styles.td}>
                         <input
                           className="inline-input"

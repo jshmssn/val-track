@@ -325,11 +325,11 @@ export function AIUploadModal({
         kills: null,
         deaths: null,
         assists: null,
+        fb: row?.firstBloods ?? 0,
         adr: null,
         kast: null,
         fkRate: null,
         clutchRate: null,
-        firstBloods: 0,
         plants: 0,
         defuses: 0,
       });

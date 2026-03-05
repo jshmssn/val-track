@@ -16,20 +16,19 @@ export function PlayerCard({
   if (rows.length === 0) return null;
 
   const isPerMatchCard = !!row && !!matchMeta;
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
 
   const stats = {
-    acs: avg(rows.map((r) => r.acs)),
-    kd: avg(rows.map((r) => r.kd)),
-    kills: avg(rows.map((r) => r.kills)),
-    deaths: avg(rows.map((r) => r.deaths)),
-    assists: avg(rows.map((r) => r.assists)),
+    acs: avg(rows.map((r) => num(r.acs))),
+    kd: avg(rows.map((r) => num(r.kd))),
+    kills: avg(rows.map((r) => num(r.kills))),
+    deaths: avg(rows.map((r) => num(r.deaths))),
+    assists: avg(rows.map((r) => num(r.assists))),
+    fb: avg(rows.map((r) => num(r.fb))),
   };
-  const latestDate = isPerMatchCard
-    ? matchMeta?.date || "-"
-    : [...matches]
-        .filter((m) => (m.playerStats || []).some((ps) => ps.player === player))
-        .map((m) => m.date)
-        .sort((a, b) => b.localeCompare(a))[0] || "-";
   const agents = [...new Set(rows.map((r) => r.agent))];
   const subTitle = isPerMatchCard
     ? rows[0]?.agent || "-"
@@ -47,14 +46,9 @@ export function PlayerCard({
     { label: "KILLS", val: fmt(stats.kills), hi: false, warn: false },
     { label: "DEATHS", val: fmt(stats.deaths), hi: false, warn: false },
     { label: "ASSISTS", val: fmt(stats.assists), hi: false, warn: false },
-    {
-      label: "DATE",
-      val: latestDate,
-      hi: false,
-      warn: false,
-      compact: true,
-    },
+    { label: "FB", val: fmt(stats.fb), hi: false, warn: false },
   ];
+  const lastRowStart = Math.floor((chips.length - 1) / 3) * 3;
 
   const tagColors = {
     "TOP PERFORMER": {
@@ -125,8 +119,11 @@ export function PlayerCard({
       </div>
 
       <div className="player-stats-grid">
-        {chips.map((c) => (
-          <div key={c.label} className="stat-cell">
+        {chips.map((c, idx) => (
+          <div
+            key={c.label}
+            className={`stat-cell${(idx + 1) % 3 === 0 || idx === chips.length - 1 ? " no-right" : ""}${idx >= lastRowStart ? " no-bottom" : ""}`}
+          >
             <div
               className="stat-val"
               style={{

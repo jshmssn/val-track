@@ -797,10 +797,10 @@ input[type="number"]::-webkit-outer-spin-button {
   transition: background 0.15s;
 }
 
-.stat-cell:nth-child(3n) {
+.stat-cell.no-right {
   border-right: none;
 }
-.stat-cell:nth-last-child(-n + 3) {
+.stat-cell.no-bottom {
   border-bottom: none;
 }
 
